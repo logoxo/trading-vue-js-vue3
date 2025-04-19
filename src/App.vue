@@ -66,6 +66,7 @@ import Data from '/data/data.json'
 import DataCube from './helpers/datacube.js'
 import RSI from './helpers/RSI.vue'
 import MatrixSeries from './helpers/MatrixSeries.vue'
+import SimpleMatrix from './helpers/SimpleMatrix.vue'
 
 export default {
   name: 'app',
@@ -75,7 +76,7 @@ export default {
   
   provide() {
     return {
-      overlays: [RSI, MatrixSeries]
+      overlays: [RSI, MatrixSeries, SimpleMatrix]
     }
   },
   methods: {
@@ -201,20 +202,9 @@ export default {
               }
             },
             {
-              name: "Matrix Series",
-              type: "MatrixSeries",
-              data: ohlcv, // Verwendet dieselben OHLCV-Daten wie das Hauptchart
-              settings: {
-                smoother: 5,
-                supResPeriod: 50,
-                supResPercentage: 100,
-                pricePeriod: 16,
-                ob: 200,
-                os: -200,
-                showObOs: true,
-                dynamic: true,
-                trendThreshold: 0.05
-              }
+              name: "Simple Matrix",
+              type: "SimpleMatrix",
+              data: ohlcv // Verwendet dieselben OHLCV-Daten wie das Hauptchart
             }
           ]
         };
