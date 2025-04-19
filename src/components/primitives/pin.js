@@ -82,7 +82,6 @@ export default class Pin {
             comp.mouse = this.mouse;
         }
     }
-    }
 
     re_init() {
         this.update_from(
