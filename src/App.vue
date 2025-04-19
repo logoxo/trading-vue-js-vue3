@@ -202,9 +202,20 @@ export default {
               }
             },
             {
-              name: "Simple Matrix",
-              type: "SimpleMatrix",
-              data: ohlcv // Verwendet dieselben OHLCV-Daten wie das Hauptchart
+              name: "Matrix Series",
+              type: "MatrixSeries",
+              data: ohlcv, // Verwendet dieselben OHLCV-Daten wie das Hauptchart
+              settings: {
+                smoother: 5,
+                sup_res_period: 50,
+                sup_res_percentage: 100,
+                price_period: 16,
+                ob: 200,
+                os: -200,
+                show_obos: true,
+                dynamic: true,
+                trend_threshold: 0.05
+              }
             }
           ]
         };
