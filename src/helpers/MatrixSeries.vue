@@ -26,7 +26,54 @@ export default {
                     dynamic: { def: true, text: 'Dynamische S/R' },
                     trendThreshold: { def: 0.05, text: 'Trend Schwelle' }
                 },
-                conf: { 'renderer': 'Candles' },
+                conf: { 'renderer': 'Splines' },
+                computed: { },
+                draw(ctx) {
+                    // Verwende Splines als Basisfunktionalität, aber füge benutzerdefinierte Zeichnung hinzu
+                    if (!this._candles) return
+                    
+                    const layout = this.$props.layout
+                    const candles = this._candles
+                    
+                    // Splines bereits gezeichnet, jetzt Markerungen für starke Trends hinzufügen
+                    for (let i = 0; i < candles.length; i++) {
+                        const t = candles[i][0]
+                        const open = candles[i][1]
+                        const high = candles[i][2]
+                        const low = candles[i][3]
+                        const close = candles[i][4]
+                        const color = candles[i][5]
+                        
+                        // Konvertiere Zeit und Preis zu Bildschirmkoordinaten
+                        const x = layout.t2screen(t)
+                        const y_open = layout.$2screen(open)
+                        const y_high = layout.$2screen(high)
+                        const y_low = layout.$2screen(low)
+                        const y_close = layout.$2screen(close)
+                        
+                        if (!isNaN(y_open) && !isNaN(y_close)) {
+                            // Kerzenkörper zeichnen
+                            ctx.strokeStyle = color
+                            ctx.fillStyle = color
+                            
+                            const bodyWidth = 8 // Breite der Kerze
+                            
+                            // Docht zeichnen
+                            ctx.beginPath()
+                            ctx.moveTo(x, y_high)
+                            ctx.lineTo(x, y_low)
+                            ctx.stroke()
+                            
+                            // Kerzenkörper zeichnen
+                            ctx.fillRect(
+                                x - bodyWidth/2,
+                                y_open, 
+                                bodyWidth, 
+                                y_close - y_open
+                            )
+                        }
+                    }
+                },
                 update: `
                     // Daten vorbereiten
                     const ohlc = this.$props.data
@@ -199,8 +246,14 @@ export default {
                         vcolor[i]    // color
                     ])
                     
-                    // Ausgabe erstellen
-                    this.v = candles
+                    // Ausgabe erstellen - Daten für den Indikator setzen
+                    // console.log(candles); // Debugging
+                    
+                    // Für TradingVue, setze den ersten Datenpunkt
+                    this[0] = candles.map(candle => [candle[0], candle[4]])
+                    
+                    // Speichere die vollständigen Candle-Daten für den Renderer
+                    this._candles = candles
                     
                     // Support/Resistance Linien
                     if (dynamic) {
