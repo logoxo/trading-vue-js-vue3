@@ -513,8 +513,22 @@ export default class DCEvents {
                 });
                 
                 // Force a data update to ensure all components react
-                if (this.tv.$refs.chart) {
-                    this.tv.$refs.chart.update();
+                // Chart.vue might not have an update method in Vue 3
+                try {
+                    // Manually trigger the chart to redraw by forcing a range update
+                    if (this.tv.$refs.chart) {
+                        // Alternative 1: Use range-changed event which always triggers a redraw
+                        if (this.tv.$refs.chart.range && this.tv.$refs.chart.range.length === 2) {
+                            this.tv.$emit('range-changed', this.tv.$refs.chart.range);
+                        }
+                        // Alternative 2: Force reactive update of key properties
+                        if (this.tv.$refs.chart.layout) {
+                            // Force the layout to update
+                            this.tv.$refs.chart.update_layout();
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not force chart update:', e);
                 }
             } catch (e) {
                 console.error('Error starting drawing mode:', e);
@@ -736,10 +750,27 @@ export default class DCEvents {
             this.data.selected = sett.$uuid;
             
             // If possible, force an update on the chart
-            if (this.tv && this.tv.$refs && this.tv.$refs.chart) {
-                if (typeof this.tv.$refs.chart.update === 'function') {
-                    this.tv.$refs.chart.update();
+            // Chart.vue might not have an update method in Vue 3
+            try {
+                if (this.tv && this.tv.$refs && this.tv.$refs.chart) {
+                    // Alternative 1: Use range-changed event which always triggers a redraw
+                    if (this.tv.$refs.chart.range && this.tv.$refs.chart.range.length === 2) {
+                        // Make a copy to ensure reactivity
+                        const range = [...this.tv.$refs.chart.range];
+                        this.tv.$emit('range-changed', range);
+                    }
+                    
+                    // Alternative 2: Force reactive update of layout
+                    if (this.tv.$refs.chart.update_layout) {
+                        this.tv.$refs.chart.update_layout();
+                    } else if (this.tv.$refs.chart._layout) {
+                        // Force the layout to update by assigning to itself
+                        const layout = this.tv.$refs.chart._layout;
+                        this.tv.$refs.chart._layout = Object.assign({}, layout);
+                    }
                 }
+            } catch (e) {
+                console.warn('Could not force chart update:', e);
             }
         } catch (e) {
             console.error('Error updating reactive properties:', e);

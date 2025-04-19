@@ -112,24 +112,73 @@ export default defineComponent({
             // Make sure tool is initialized
             try {
                 // Initialize settings for pins if they don't exist
-                if (!this.$props.settings.p1) {
-                    // Create default positions for pins
-                    const midX = this.$props.layout ? this.$props.layout.width / 2 : 100;
-                    const midY = this.$props.layout ? this.$props.layout.height / 2 : 100;
-                    
-                    // Set initial positions via settings to ensure reactivity
-                    this.$emit('change-settings', {
-                        p1: [
-                            this.$props.layout ? this.layout.screen2t(midX - 50) : Date.now() - 3600000,
-                            this.$props.layout ? this.layout.screen2$(midY - 20) : 0
-                        ],
-                        p2: [
-                            this.$props.layout ? this.layout.screen2t(midX + 50) : Date.now(),
-                            this.$props.layout ? this.layout.screen2$(midY + 20) : 0
-                        ]
-                    });
-                    
-                    console.log('Created default pin positions');
+                if (!this.$props.settings.p1 || !this.$props.settings.p2) {
+                    try {
+                        console.log('Initializing default pin positions');
+                        
+                        // Get layout and grid dimensions
+                        let layout = this.$props.layout;
+                        
+                        // Fallback values if layout is missing
+                        let midX = 100, midY = 100;
+                        let t1 = Date.now() - 3600000, t2 = Date.now();
+                        let y1 = 0, y2 = 0;
+                        
+                        if (layout) {
+                            console.log('Using layout for pin positions', { 
+                                width: layout.width, 
+                                height: layout.height 
+                            });
+                            
+                            midX = layout.width / 2;
+                            midY = layout.height / 2;
+                            
+                            // Convert screen coordinates to chart coordinates if possible
+                            if (typeof layout.screen2t === 'function' && typeof layout.screen2$ === 'function') {
+                                t1 = layout.screen2t(midX - 50);
+                                t2 = layout.screen2t(midX + 50);
+                                y1 = layout.screen2$(midY - 20);
+                                y2 = layout.screen2$(midY + 20);
+                            }
+                        } else {
+                            console.warn('Layout not available for pin position calculation');
+                        }
+                        
+                        // Set initial positions via settings to ensure reactivity
+                        const newSettings = {};
+                        
+                        // Only update p1 if it doesn't exist
+                        if (!this.$props.settings.p1) {
+                            newSettings.p1 = [t1, y1];
+                        }
+                        
+                        // Only update p2 if it doesn't exist
+                        if (!this.$props.settings.p2) {
+                            newSettings.p2 = [t2, y2];
+                        }
+                        
+                        // Update settings if we have any changes
+                        if (Object.keys(newSettings).length > 0) {
+                            console.log('Emitting change-settings with pin positions:', newSettings);
+                            this.$emit('change-settings', newSettings);
+                        }
+                    } catch (e) {
+                        console.error('Error initializing pin positions:', e);
+                        
+                        // Fallback default pin positions using simple values
+                        const fallbackSettings = {};
+                        if (!this.$props.settings.p1) {
+                            fallbackSettings.p1 = [Date.now() - 3600000, 0];
+                        }
+                        if (!this.$props.settings.p2) {
+                            fallbackSettings.p2 = [Date.now(), 0];
+                        }
+                        
+                        if (Object.keys(fallbackSettings).length > 0) {
+                            console.log('Using fallback pin positions:', fallbackSettings);
+                            this.$emit('change-settings', fallbackSettings);
+                        }
+                    }
                 }
                 
                 // First pin is settled at the first position
