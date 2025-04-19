@@ -26,11 +26,11 @@ import DataCube from '../../src/helpers/datacube.js'
 import Stream from './DataHelper/stream.js'
 import ScriptOverlay from './Scripts/EMAx6.vue'
 import BSB from './Scripts/BuySellBalance.vue'
+import RSIScript from './Scripts/RSIScript.vue'
 
-// Gettin' data through webpeck proxy
-const PORT = location.port
-const URL = `http://localhost:${PORT}/api/v1/klines?symbol=`
-const WSS = `ws://localhost:${PORT}/ws/btcusdt@aggTrade`
+// Use Binance official APIs
+const URL = `https://api.binance.com/api/v3/klines?symbol=`
+const WSS = `wss://stream.binance.com:9443/ws/btcusdt@aggTrade`
 
 export default {
     name: 'DataHelper',
@@ -59,6 +59,14 @@ export default {
                     name: 'Buy/Sell Balance, $lookback',
                     data: [],
                     settings: {}
+                }, {
+                    type: 'RSIScript',
+                    name: 'RSI, 14',
+                    data: [],
+                    settings: {
+                        lineWidth: 1,
+                        color: '#85c'
+                    }
                 }],
                 datasets: [{
                     type: 'Trades',
@@ -121,11 +129,13 @@ export default {
                     parseFloat(trade.q),
                     parseFloat(trade.p)
                 ],
+                // Make sure RSI script is calculated
+                'offchart.RSIScript0.data': []
                 // ... other onchart/offchart updates
             })
         }
     },
-    beforeUnmount() {
+    beforeDestroy() {
         window.removeEventListener('resize', this.onResize)
         if (this.stream) this.stream.off()
     },
@@ -144,7 +154,7 @@ export default {
             width: window.innerWidth,
             height: window.innerHeight,
             index_based: false,
-            overlays: [ScriptOverlay, BSB]
+            overlays: [ScriptOverlay, BSB, RSIScript]
         }
     }
 }
