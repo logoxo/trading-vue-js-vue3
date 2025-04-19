@@ -1,6 +1,8 @@
 <script>
 import Overlay from '../mixins/overlay.js'
 
+// Minimalistischer Ansatz
+
 export default {
   name: 'BasicIndicator',
   mixins: [Overlay],
@@ -18,22 +20,38 @@ export default {
     calc() {
       return {
         props: {},
-        conf: {},
+        conf: { renderer: 'Splines' },
         update: `
-          // Erstelle einen Testindikator (einfache 20-Tage-SMA)
-          let sma20 = sma(close, 20)
-          
-          // Zeit und SMA-Werte in [time, value] Format für den Indikator
+          // Manuelle Daten erstellen, ohne Abhängigkeit von Bibliotheksfunktionen
+          // 100 Datenpunkte zwischen 0 und 100
           let data = []
+          
           for (let i = 0; i < time.length; i++) {
-            data.push([time[i], sma20[i]])
+            // Einfache Sinuskurve zwischen 40 und 60
+            let value = 50 + Math.sin(i * 0.2) * 10
+            data.push([time[i], value])
           }
           
-          // Für TradingVue setze den ersten Datenpunkt
+          // Ein Wert in der Mitte des sichtbaren Bereichs - sollte sichtbar sein
+          console.log('Direkter Datenpunkt:', data[Math.floor(data.length / 2)])
+          
+          // Definiere die Y-Achsen-Grenzen fest
+          this.$setYrange([0, 100])
+          
+          // Direktes Setzen des Werts
+          this.v = data
+          
+          // Auch Standard-Weise setzen
           this[0] = data
           
           // Debug-Ausgabe
-          console.log('Basic Indicator erstellt mit ' + data.length + ' Datenpunkten')
+          console.log('Basic Indicator Daten:', {
+            length: data.length,
+            first_point: data[0],
+            last_point: data[data.length - 1],
+            min: 40, 
+            max: 60
+          })
         `
       }
     }
