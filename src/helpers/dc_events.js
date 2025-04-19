@@ -58,6 +58,8 @@ export default class DCEvents {
         switch(event) {
             case 'register-tools': this.register_tools(args)
                 break
+            case 'init-toolbar-tools': this.init_toolbar_tools(args)
+                break
             case 'exec-script': this.exec_script(args)
                 break
             case 'exec-all-scripts': this.exec_all_scripts()
@@ -142,36 +144,164 @@ export default class DCEvents {
         }
     }
 
+    // Initialize basic toolbar tools when none are available
+    init_toolbar_tools(tools) {
+        console.log('Initializing toolbar tools', tools);
+        
+        // Always initialize tools even if some already exist
+        // This ensures we have drawing tools available
+        if (!this.data.tools) this.data.tools = [];
+        
+        // Add tools if they don't already exist
+        for (const tool of tools || []) {
+            if (!this.data.tools.find(t => t.type === tool.type)) {
+                this.data.tools.push(tool);
+            }
+        }
+        
+        // Make sure we have at least the basic drawing tools
+        let hasLineTool = this.data.tools.some(t => 
+            t.type === 'Segment' || t.type === 'LineTool:Segment');
+            
+        // Register line tool manually if it doesn't exist
+        if (!hasLineTool) {
+            console.log('Manually registering LineTool since it was not found');
+            try {
+                const Icons = require('../stuff/icons.json');
+                
+                // Add the segment tool
+                if (Icons['segment.png']) {
+                    this.data.tools.push({
+                        type: 'Segment',
+                        icon: Icons['segment.png'],
+                        name: 'Line Segment'
+                    });
+                }
+                
+                // Add extended line tool
+                if (Icons['extended.png']) {
+                    this.data.tools.push({
+                        type: 'Extended',
+                        icon: Icons['extended.png'],
+                        name: 'Extended Line',
+                        settings: { extended: true }
+                    });
+                }
+                
+                // Add ray tool
+                if (Icons['ray.png']) {
+                    this.data.tools.push({
+                        type: 'Ray',
+                        icon: Icons['ray.png'],
+                        name: 'Ray',
+                        settings: { ray: true }
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to manually register line tools:', e);
+            }
+        }
+        
+        // Make sure default tool is set
+        if (!this.data.tool) this.data.tool = 'Cursor';
+        
+        console.log('Tools after initialization:', this.data.tools.map(t => t.type));
+    }
+    
     // Combine all tools and their mods
     register_tools(tools) {
+        console.log('Registering tools:', tools);
+        
         let preset = {}
         for (var tool of this.data.tools || []) {
              preset[tool.type] = tool
              delete tool.type
         }
+        
         this.data.tools = []
         let list = [{
             type: 'Cursor', icon: Icons['cursor.png']
         }]
+        
+        // Manually add line tools to make sure they're available
+        // even if the component registration fails
+        this.add_basic_drawing_tools(list);
+        
+        // Process tools received from components
         for (var tool of tools) {
+            if (!tool.info) {
+                console.error('Tool missing info:', tool);
+                continue;
+            }
+            
             var proto = Object.assign({}, tool.info)
             let type = tool.info.type || 'Default'
             proto.type = `${tool.use_for}:${type}`
             this.merge_presets(proto, preset[tool.use_for])
             this.merge_presets(proto, preset[proto.type])
             delete proto.mods
-            list.push(proto)
-            for (var mod in tool.info.mods) {
-                var mp = Object.assign({}, proto)
-                mp = Object.assign(mp, tool.info.mods[mod])
-                mp.type = `${tool.use_for}:${mod}`
-                this.merge_presets(mp, preset[tool.use_for])
-                this.merge_presets(mp, preset[mp.type])
-                list.push(mp)
+            
+            // Check if this tool already exists in the list
+            if (!list.find(t => t.type === proto.type)) {
+                list.push(proto)
+            }
+            
+            // Process tool modifications
+            if (tool.info.mods) {
+                for (var mod in tool.info.mods) {
+                    var mp = Object.assign({}, proto)
+                    mp = Object.assign(mp, tool.info.mods[mod])
+                    mp.type = `${tool.use_for}:${mod}`
+                    this.merge_presets(mp, preset[tool.use_for])
+                    this.merge_presets(mp, preset[mp.type])
+                    
+                    // Check if this tool already exists in the list
+                    if (!list.find(t => t.type === mp.type)) {
+                        list.push(mp)
+                    }
+                }
             }
         }
+        
         this.data.tools = list
         this.data.tool = 'Cursor'
+        
+        console.log('Registered tools:', this.data.tools.map(t => t.type));
+    }
+    
+    // Add basic drawing tools to ensure they're always available
+    add_basic_drawing_tools(list) {
+        // Line segment tool
+        if (Icons['segment.png'] && !list.find(t => t.type === 'Segment')) {
+            list.push({
+                type: 'Segment',
+                name: 'Line Segment',
+                icon: Icons['segment.png'],
+                group: 'Lines'
+            });
+        }
+        
+        // Extended line tool
+        if (Icons['extended.png'] && !list.find(t => t.type === 'Extended')) {
+            list.push({
+                type: 'Extended',
+                name: 'Extended Line',
+                icon: Icons['extended.png'],
+                group: 'Lines',
+                settings: { extended: true }
+            });
+        }
+        
+        // Ray tool
+        if (Icons['ray.png'] && !list.find(t => t.type === 'Ray')) {
+            list.push({
+                type: 'Ray',
+                name: 'Ray',
+                icon: Icons['ray.png'],
+                group: 'Lines',
+                settings: { ray: true }
+            });
+        }
     }
 
     exec_script(args) {
@@ -314,41 +444,132 @@ export default class DCEvents {
         this.object_selected([])
         // Remove the previous RangeTool
         let rem = () => this.get('RangeTool')
-            .filter(x => x.settings.shiftMode)
+            .filter(x => x.settings && x.settings.shiftMode)
             .forEach(x => this.del(x.id))
-        if (this.data.tool && this.data.tool !== 'Cursor' &&
-           !this.data.drawingMode) {
-            // Prevent from "null" tools (tool created with HODL)
-            if (args[1].type !== 'tap') {
-                this.data.drawingMode = true
-                this.build_tool(args[0])
-            } else {
-                this.tv.showTheTip(
-                    `<b>Hodl</b>+<b>Drug</b> to create, ` +
-                    `<b>Tap</b> to finish a tool`
-                )
+        
+        // First do some debug logging to help identify issues
+        console.log('Grid mousedown', {
+            tool: this.data.tool,
+            drawingMode: this.data.drawingMode,
+            eventType: args[1] ? args[1].type : 'unknown',
+            hasTools: this.data.tools && this.data.tools.length > 0,
+            availableTools: this.data.tools ? this.data.tools.map(t => t.type) : []
+        });
+        
+        // Force drawing mode to start with whatever tool is selected
+        if (this.data.tool && this.data.tool !== 'Cursor') {
+            console.log('Starting drawing mode with tool:', this.data.tool);
+            
+            // Reset drawing mode for safety
+            this.data.drawingMode = false;
+            
+            // Build the tool immediately rather than using setTimeout
+            try {
+                // Start drawing mode
+                this.data.drawingMode = true;
+                this.build_tool(args[0]);
+                
+                console.log('Drawing mode enabled:', 
+                    this.data.drawingMode, 
+                    'Current tool:', 
+                    this.data.tool);
+                
+                // Emit a custom event so any components watching can respond
+                this.tv.$emit('custom-event', {
+                    event: 'drawing-started',
+                    args: [this.data.tool, args[0]]
+                });
+            } catch (e) {
+                console.error('Error starting drawing mode:', e);
             }
-        } else if (this.sett.shift_measure && args[1].shiftKey) {
-            rem()
-            this.tv.$nextTick(() =>
-                this.build_tool(args[0], 'RangeTool:ShiftMode'))
+        } else if (this.sett.shift_measure && args[1] && args[1].shiftKey) {
+            rem();
+            
+            // Build directly instead of using nextTick
+            try {
+                this.build_tool(args[0], 'RangeTool:ShiftMode');
+            } catch (e) {
+                console.error('Error building RangeTool:', e);
+            }
         } else {
-            rem()
+            rem();
         }
     }
 
     drawing_mode_off() {
-        this.data.drawingMode = false
-        this.data.tool = 'Cursor'
+        console.log('Turning drawing mode off');
+        this.data.drawingMode = false;
+        this.data.tool = 'Cursor';
     }
 
     // Place a new tool
     build_tool(grid_id, type) {
-
-        let list = this.data.tools
+        // Add debug info to help diagnose issues
+        console.log('Building tool', { 
+            grid_id, 
+            type: type || this.data.tool,
+            availableTools: this.data.tools ? this.data.tools.map(t => t.type) : []
+        });
+        
+        let list = this.data.tools || []
         type = type || this.data.tool
+        
+        if (!type) {
+            console.error('No tool type specified');
+            return;
+        }
+        
+        // Special case for segment tool which might be registered differently
+        if (type === 'LineTool:Segment') {
+            type = 'Segment';
+        } else if (type === 'LineTool:Extended') {
+            type = 'Extended';
+        } else if (type === 'LineTool:Ray') {
+            type = 'Ray';
+        }
+        
         let proto = list.find(x => x.type === type)
-        if (!proto) return
+        
+        // If we can't find the tool in the list, check for tools without full type name (missing colon)
+        if (!proto && type.indexOf(':') > 0) {
+            const baseType = type.split(':')[0];
+            proto = list.find(x => x.type === baseType);
+        }
+        
+        // If still not found, check for LineTool
+        if (!proto && (type === 'Segment' || type === 'Extended' || type === 'Ray')) {
+            proto = list.find(x => x.type === 'LineTool');
+        }
+        
+        // If still not found, manually create a prototype
+        if (!proto && (type === 'Segment' || type === 'Extended' || type === 'Ray')) {
+            console.log('Creating manual prototype for:', type);
+            
+            // Create a basic tool prototype
+            proto = {
+                type: type,
+                name: type,
+                settings: {}
+            };
+            
+            if (type === 'Extended') {
+                proto.settings.extended = true;
+            } else if (type === 'Ray') {
+                proto.settings.ray = true;
+            }
+            
+            // Add to tools list for future use
+            if (!this.data.tools) this.data.tools = [];
+            this.data.tools.push(proto);
+        }
+        
+        if (!proto) {
+            console.error(`Could not find tool of type: ${type}`);
+            return;
+        }
+        
+        console.log('Found prototype for tool:', proto);
+        
         let sett = Object.assign({}, proto.settings || {})
         let data = (proto.data || []).slice()
 
@@ -358,17 +579,43 @@ export default class DCEvents {
         sett.$state = 'wip'
 
         let side = grid_id ? 'offchart' : 'onchart'
+        
+        // Make tool type parsing more robust
+        const toolType = type.indexOf(':') > 0 ? type.split(':')[0] : type;
+        
+        // If using the Segment tool, make sure we set the correct type
+        // For segment, ray, and extended lines, we need to use LineTool
+        let finalType;
+        if (toolType === 'Segment' || toolType === 'Extended' || toolType === 'Ray' ||
+            type === 'Segment' || type === 'Extended' || type === 'Ray') {
+            finalType = 'LineTool';
+            console.log('Setting final type to LineTool for line drawing');
+        } else {
+            finalType = toolType;
+        }
+            
+        console.log('Adding tool with type:', finalType);
+        
+        // Make sure the tool has a recognizable name
+        const displayName = proto.name || 
+            (finalType === 'LineTool' ? (type === 'Segment' ? 'Line Segment' : type) : toolType);
+        
         let id = this.add(side, {
-            name: proto.name,
-            type: type.split(':')[0],
+            name: displayName,
+            type: finalType,
             settings: sett,
             data: data,
             grid: { id: grid_id }
-        })
+        });
 
         sett.$uuid = `${id}-${Utils.now()}`
-
         this.data.selected = sett.$uuid
+        
+        console.log('Tool added with ID:', id);
+        
+        // Ensure drawing mode is enabled
+        this.data.drawingMode = true;
+        
         this.add_trash_icon()
     }
 

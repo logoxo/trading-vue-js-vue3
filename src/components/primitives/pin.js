@@ -8,7 +8,7 @@ export default class Pin {
     // pin parameters)
     constructor(comp, name, params = {}) {
 
-        this.RADIUS = comp.$props.config.PIN_RADIUS || 5.5
+        this.RADIUS = (comp.$props.config && comp.$props.config.PIN_RADIUS) || 5.5
         this.RADIUS_SQ = Math.pow(this.RADIUS + 7, 2)
 
         if (Utils.is_mobile) {
@@ -16,21 +16,26 @@ export default class Pin {
             this.RADIUS_SQ *= 2.5
         }
 
-        this.COLOR_BACK = comp.$props.colors.back
-        this.COLOR_BR = comp.$props.colors.text
+        this.COLOR_BACK = comp.$props.colors ? comp.$props.colors.back : '#fff'
+        this.COLOR_BR = comp.$props.colors ? comp.$props.colors.text : '#000'
 
         this.comp = comp
-        this.layout = comp.layout
-        this.mouse = comp.mouse
+        this.layout = comp.layout || {}
         this.name = name
         this.state = params.state || 'settled'
         this.hidden = params.hidden || false
-
+        
+        // Create mouse handlers if they don't exist
+        this.setup_mouse(comp)
+        
         this.mouse.on('mousemove', e => this.mousemove(e))
         this.mouse.on('mousedown', e => this.mousedown(e))
         this.mouse.on('mouseup', e => this.mouseup(e))
+        
+        console.log(`Pin ${name} created with state: ${this.state}`);
 
-        if (comp.state === 'finished') {
+        // Initialize with settings or cursor
+        if (comp.state === 'finished' && comp.$props.settings && comp.$props.settings[name]) {
             this.state = 'settled'
             this.update_from(comp.$props.settings[name])
         } else {
@@ -40,6 +45,43 @@ export default class Pin {
         if (this.state !== 'settled') {
             this.comp.$emit('scroll-lock', true)
         }
+        
+        console.log(`Pin ${name} initialized`);
+    }
+    
+    // Ensure mouse controller is set up
+    setup_mouse(comp) {
+        // If mouse already exists
+        if (comp.mouse && typeof comp.mouse.on === 'function') {
+            this.mouse = comp.mouse;
+            return;
+        }
+        
+        console.log('Creating new mouse controller for pin');
+        
+        // Create a mouse object 
+        this.mouse = {
+            x: comp.$props.cursor ? comp.$props.cursor.x : 0,
+            y: comp.$props.cursor ? comp.$props.cursor.y : 0,
+            listeners: {},
+            on: (event, handler) => {
+                if (!this.mouse.listeners[event]) {
+                    this.mouse.listeners[event] = [];
+                }
+                this.mouse.listeners[event].push(handler);
+            },
+            emit: (event, data) => {
+                if (this.mouse.listeners[event]) {
+                    this.mouse.listeners[event].forEach(h => h(data));
+                }
+            }
+        };
+        
+        // Add mouse object to comp if it doesn't exist
+        if (!comp.mouse) {
+            comp.mouse = this.mouse;
+        }
+    }
     }
 
     re_init() {
@@ -84,21 +126,29 @@ export default class Pin {
     }
 
     update() {
+        const cursor = this.comp.$props.cursor || {};
+        
+        // For Vue 3 compatibility, ensure cursor properties exist
+        if (!cursor) {
+            console.error('Pin update called with no cursor data');
+            return;
+        }
+        
+        this.y$ = cursor.y$ || 0
+        this.y = cursor.y || 0
+        this.t = cursor.t || 0
+        this.x = cursor.x || 0
+        
+        console.log(`Pin ${this.name} updated to position:`, { x: this.x, y: this.y, t: this.t, y$: this.y$ });
 
-        this.y$ = this.comp.$props.cursor.y$
-        this.y =  this.comp.$props.cursor.y
-        this.t = this.comp.$props.cursor.t
-        this.x =  this.comp.$props.cursor.x
-
-        // Save pin as time in IB mode
-        //if (this.layout.ti_map.ib) {
-        //    this.t = this.layout.ti_map.i2t(this.t )
-        //}
-
-        // Reset the settings attahed to the pin (position)
-        this.comp.$emit('change-settings', {
-             [this.name]: [this.t, this.y$]
-        })
+        // Reset the settings attached to the pin (position)
+        try {
+            this.comp.$emit('change-settings', {
+                [this.name]: [this.t, this.y$]
+            });
+        } catch (e) {
+            console.error('Error emitting pin change-settings:', e);
+        }
     }
 
     update_from(data, emit = false) {

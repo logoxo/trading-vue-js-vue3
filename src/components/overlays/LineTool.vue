@@ -41,20 +41,74 @@ export default defineComponent({
                 }
             }
         },
+        // Called when component is mounted
+        mounted() {
+            console.log('LineTool mounted');
+            this.$nextTick(() => {
+                this.init();
+            });
+        },
         // Called after overlay mounted
         init() {
-            // First pin is settled at the mouse position
-            this.pins.push(new Pin(this, 'p1'))
-            // Second one is following mouse until it clicks
-            this.pins.push(new Pin(this, 'p2', {
-                state: 'tracking'
-            }))
-            this.pins[1].on('settled', () => {
-                // Call when current tool drawing is finished
-                // (Optionally) reset the mode back to 'Cursor'
-                this.set_state('finished')
-                this.$emit('drawing-mode-off')
-            })
+            console.log('LineTool init called with settings:', this.$props.settings);
+            
+            // Set up core variables
+            this.pins = [];
+            this.collisions = [];
+            this.show_pins = false;
+            this.drag = null;
+            
+            // Initialize mouse controller if needed
+            if (!this.mouse) {
+                console.log('Creating mouse handlers using cursor prop');
+                this.mouse = {
+                    x: this.$props.cursor ? this.$props.cursor.x : 0,
+                    y: this.$props.cursor ? this.$props.cursor.y : 0,
+                    listeners: {},
+                    on: (event, handler) => {
+                        if (!this.mouse.listeners[event]) {
+                            this.mouse.listeners[event] = [];
+                        }
+                        this.mouse.listeners[event].push(handler);
+                    },
+                    emit: (event, data) => {
+                        if (this.mouse.listeners[event]) {
+                            this.mouse.listeners[event].forEach(h => h(data));
+                        }
+                    }
+                };
+            }
+            
+            // Make sure tool is initialized
+            try {
+                // First pin is settled at the mouse position
+                this.pins.push(new Pin(this, 'p1'));
+                
+                // Second one is following mouse until it clicks
+                this.pins.push(new Pin(this, 'p2', {
+                    state: 'tracking'
+                }));
+                
+                console.log('LineTool pins created:', this.pins);
+                
+                this.pins[1].on('settled', () => {
+                    // Call when current tool drawing is finished
+                    // (Optionally) reset the mode back to 'Cursor'
+                    console.log('Pin settled, finishing drawing');
+                    this.set_state('finished');
+                    this.$emit('drawing-mode-off');
+                });
+                
+                // Emit event to notify that tool is ready
+                this.$emit('custom-event', {
+                    event: 'tool-initialized',
+                    args: [this.$options.name]
+                });
+                
+                console.log('LineTool initialization complete');
+            } catch (e) {
+                console.error('Error initializing LineTool:', e);
+            }
         },
         draw(ctx) {
             if (!this.p1 || !this.p2) return

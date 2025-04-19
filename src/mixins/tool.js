@@ -7,9 +7,27 @@ import Utils from '../stuff/utils.js'
 export default {
     methods: {
         init_tool() {
+            console.log('Initializing tool:', this.$options.name);
             // Collision functions (float, float) => bool,
             this.collisions = []
             this.pins = []
+            
+            // Make sure mouse is defined before attaching handlers
+            if (!this.mouse && this.$props.cursor) {
+                console.log('Creating mouse handlers using cursor prop');
+                // Create a mouse object if it doesn't exist
+                this.mouse = {
+                    on: (event, handler) => {
+                        // Store event handlers to be called manually
+                        if (!this._mouse_handlers) this._mouse_handlers = {};
+                        if (!this._mouse_handlers[event]) this._mouse_handlers[event] = [];
+                        this._mouse_handlers[event].push(handler);
+                    },
+                    x: this.$props.cursor ? this.$props.cursor.x : null,
+                    y: this.$props.cursor ? this.$props.cursor.y : null
+                };
+            }
+            
             this.mouse.on('mousemove', e => {
                 if (this.collisions.some(f => f(
                     this.mouse.x, this.mouse.y,
@@ -22,6 +40,7 @@ export default {
             })
 
             this.mouse.on('mousedown', e => {
+                console.log('Tool mousedown:', e);
                 if (Utils.default_prevented(e)) return
                 if (this.collisions.some(f => f(
                     this.mouse.x, this.mouse.y,
@@ -34,7 +53,9 @@ export default {
                     this.pins.forEach(x => x.mousedown(e, true))
                 }
             })
+            
             this.mouse.on('mouseup', e => {
+                console.log('Tool mouseup');
                 this.drag = null
                 this.$emit('scroll-lock', false)
             })
@@ -45,6 +66,9 @@ export default {
 
             this.show_pins = false
             this.drag = null
+            
+            // Debug
+            console.log('Tool initialized:', this.$options.name);
         },
         render_pins(ctx) {
             if (this.selected || this.show_pins) {

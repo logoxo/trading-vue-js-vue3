@@ -43,18 +43,141 @@ export default defineComponent({
         // We need to know which components we will use.
         // Custom overlay components overwrite built-ins:
         var tools = []
+        
+        console.log('Registering tools from components:', this._list.map(x => x.name));
+        
+        // Make sure LineTool is included in the registry
+        let hasLineTool = false;
+        let manualTools = [];
+        
         this._list.forEach((x, i) => {
-            let use_for = x.methods.use_for()
-            if (x.methods.tool) tools.push({
-                use_for, info: x.methods.tool()
-            })
+            // Debug info to determine if methods are correctly defined
+            let component_methods = x.methods || {};
+            let has_use_for = typeof component_methods.use_for === 'function';
+            let has_tool = typeof component_methods.tool === 'function';
+            
+            console.log(`Component ${x.name}: has use_for=${has_use_for}, has tool=${has_tool}`);
+            
+            // Some components might not have methods defined correctly
+            let use_for = has_use_for ? component_methods.use_for() : [];
+            
+            // Check if this is a LineTool component
+            if (x.name === 'LineTool') {
+                hasLineTool = true;
+                // Make sure LineTool is registered for different line types
+                if (!use_for.includes('LineTool')) {
+                    use_for.push('LineTool');
+                }
+                if (!use_for.includes('Segment')) {
+                    use_for.push('Segment');
+                }
+                if (!use_for.includes('Ray')) {
+                    use_for.push('Ray');
+                }
+                if (!use_for.includes('Extended')) {
+                    use_for.push('Extended');
+                }
+            }
+            
+            if (has_tool) {
+                let tool_info = component_methods.tool();
+                console.log(`Tool info for ${x.name}:`, tool_info);
+                tools.push({
+                    use_for, info: tool_info
+                });
+                
+                // Special case for LineTool
+                if (x.name === 'LineTool') {
+                    // Manually create tool registrations for Segment, Ray, and Extended
+                    if (tool_info) {
+                        // Segment tool
+                        manualTools.push({
+                            use_for: ['Segment'],
+                            info: {
+                                type: 'Segment',
+                                name: 'Line Segment',
+                                icon: tool_info.icon || tool_info.mods?.Segment?.icon,
+                                group: 'Lines',
+                                data: [],
+                                settings: {}
+                            }
+                        });
+                        
+                        // Extended line tool
+                        manualTools.push({
+                            use_for: ['Extended'],
+                            info: {
+                                type: 'Extended',
+                                name: 'Extended Line',
+                                icon: tool_info.mods?.Extended?.icon,
+                                group: 'Lines',
+                                data: [],
+                                settings: { extended: true }
+                            }
+                        });
+                        
+                        // Ray tool
+                        manualTools.push({
+                            use_for: ['Ray'],
+                            info: {
+                                type: 'Ray',
+                                name: 'Ray',
+                                icon: tool_info.mods?.Ray?.icon,
+                                group: 'Lines',
+                                data: [],
+                                settings: { ray: true }
+                            }
+                        });
+                    }
+                }
+            }
+            
             use_for.forEach(indicator => {
-                this._registry[indicator] = i
-            })
-        })
+                console.log(`Registering ${indicator} -> ${i}`);
+                this._registry[indicator] = i;
+            });
+        });
+        
+        // Add the manual tools to the list
+        tools = tools.concat(manualTools);
+        
+        // Make sure we manually add basic line drawing tools if they weren't registered
+        if (!hasLineTool) {
+            console.warn('LineTool component not found or not properly registered, adding manual registration');
+            
+            // Find LineTool index
+            let lineToolIndex = this._list.findIndex(x => x.name === 'LineTool');
+            if (lineToolIndex >= 0) {
+                this._registry['LineTool'] = lineToolIndex;
+                this._registry['Segment'] = lineToolIndex;
+                this._registry['Extended'] = lineToolIndex;
+                this._registry['Ray'] = lineToolIndex;
+            }
+        }
+        
+        console.log('Registering tools:', tools);
         this.$emit('custom-event', {
             event: 'register-tools', args: tools
-        })
+        });
+        
+        // Init toolbar with basic tools
+        this.$emit('custom-event', {
+            event: 'init-toolbar-tools', 
+            args: [
+                { type: 'Segment', name: 'Line Segment', icon: 'segment.png' },
+                { type: 'Extended', name: 'Extended Line', icon: 'extended.png', settings: { extended: true } },
+                { type: 'Ray', name: 'Ray', icon: 'ray.png', settings: { ray: true } }
+            ]
+        });
+        
+        // Force a re-emit after a delay to ensure tools are registered
+        setTimeout(() => {
+            console.log('Re-emitting tools registration');
+            this.$emit('custom-event', {
+                event: 'register-tools', args: tools
+            });
+        }, 500);
+        
         // Note: $on was removed in Vue 3, we'll use the onCustomEvent prop instead
     },
     beforeUnmount () {
