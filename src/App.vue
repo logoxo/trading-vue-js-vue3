@@ -1,18 +1,21 @@
 <template>
   <div class="app-container">
-    <trading-vue 
-      :data="chart" 
-      :width="width" 
-      :height="height"
-      :color-back="colors.colorBack"
-      :color-grid="colors.colorGrid"
-      :color-text="colors.colorText"
-      :toolbar="true">
-    </trading-vue>
+    <div class="chart-wrapper">
+      <lightweight-chart 
+        :candle-data="candleData"
+        :indicators="indicators"
+        :width="width"
+        :height="height"
+        :theme="chartTheme"
+        ref="chart">
+      </lightweight-chart>
+    </div>
+    
     <div v-if="loadingData" class="loading-overlay">
       <div class="loading-spinner"></div>
       <div class="loading-text">{{ loadingMessage }}</div>
     </div>
+    
     <div class="data-controls">
       <div class="symbol-info" v-if="currentSymbol">
         {{ currentSymbol }} - {{ currentInterval }}
@@ -41,15 +44,22 @@
       <button @click="fetchBinanceData" :disabled="loadingData">
         {{ loadingData ? 'Lädt...' : 'Daten laden' }}
       </button>
-      <button @click="startLiveUpdates" :disabled="liveUpdatesActive || loadingData">
-        Live-Updates starten
-      </button>
-      <button @click="stopLiveUpdates" :disabled="!liveUpdatesActive">
-        Live-Updates stoppen
+      <button @click="toggleLiveUpdates" :disabled="loadingData || !currentSymbol">
+        {{ liveUpdatesActive ? 'Live-Updates stoppen' : 'Live-Updates starten' }}
       </button>
       <button @click="refreshData" :disabled="loadingData || !currentSymbol">
         <i class="refresh-icon">↻</i> Aktualisieren
       </button>
+      <div class="indicator-controls">
+        <div class="indicator-toggle">
+          <input type="checkbox" id="show-rsi" v-model="showRSI">
+          <label for="show-rsi">RSI anzeigen</label>
+        </div>
+        <div class="indicator-toggle">
+          <input type="checkbox" id="show-matrix" v-model="showMatrix">
+          <label for="show-matrix">Matrix Series anzeigen</label>
+        </div>
+      </div>
       <div class="update-info" v-if="lastUpdateTime">
         Letztes Update: {{ formatUpdateTime() }}
       </div>
@@ -61,29 +71,20 @@
 </template>
 
 <script>
-import TradingVue from './TradingVue.vue'
-import Data from '/data/data.json'
-import DataCube from './helpers/datacube.js'
-import RSI from './helpers/RSI.vue'
-import MatrixSeries from './helpers/MatrixSeries.vue'
-import SimpleMatrix from './helpers/SimpleMatrix.vue'
-import BasicIndicator from './helpers/BasicIndicator.vue'
+import { createApp } from 'vue'
+import LightweightChart from './helpers/LightweightChart.vue'
+import RSIIndicator from './helpers/RSIIndicator.js'
+import MatrixSeries from './helpers/MatrixSeries.js'
 
 export default {
   name: 'app',
   components: {
-    TradingVue
-  },
-  
-  provide() {
-    return {
-      overlays: [RSI, MatrixSeries, SimpleMatrix, BasicIndicator]
-    }
+    LightweightChart
   },
   methods: {
     onResize() {
       this.width = window.innerWidth
-      this.height = window.innerHeight
+      this.height = window.innerHeight - 50
     },
     
     formatUpdateTime() {
@@ -122,112 +123,139 @@ export default {
         
         const data = await response.json();
         
-        // Konvertiere die Daten ins TradingVue-Format
-        const ohlcv = data.map(candle => [
-          parseInt(candle[0]), // Open time in ms
-          parseFloat(candle[1]), // Open
-          parseFloat(candle[2]), // High
-          parseFloat(candle[3]), // Low
-          parseFloat(candle[4]), // Close
-          parseFloat(candle[5])  // Volume
-        ]);
+        // Konvertiere die Daten ins Lightweight-Charts-Format (Unix-Zeitstempel in Sekunden)
+        const convertedData = data.map(candle => ({
+          time: Math.floor(parseInt(candle[0]) / 1000), // Zeit in Sekunden
+          open: parseFloat(candle[1]),
+          high: parseFloat(candle[2]),
+          low: parseFloat(candle[3]),
+          close: parseFloat(candle[4]),
+          volume: parseFloat(candle[5])
+        }));
         
-        // Aktualisiere das Chart mit den neuen Daten
-        // Manuell erste RSI-Werte berechnen (einfache Beispielmethode)
-        const calculateRSI = (ohlcv, period = 14) => {
-          if (ohlcv.length < period + 1) {
-            return Array(ohlcv.length).fill().map((_, i) => [ohlcv[i][0], 50]); // Platzhalter
-          }
-          
-          const rsiData = [];
-          // Initialisierung der ersten RSI-Werte (einfache Methode)
-          for (let i = 0; i < ohlcv.length; i++) {
-            if (i < period) {
-              // Während der Initialisierung einfach Platzhalter verwenden
-              rsiData.push([ohlcv[i][0], 50]);
-            } else {
-              // Nach der Initialisierung einen vereinfachten RSI berechnen
-              // Dies ist eine Vereinfachung, keine genaue RSI-Berechnung
-              const gains = [];
-              const losses = [];
-              
-              for (let j = i - period; j < i; j++) {
-                const change = ohlcv[j+1][4] - ohlcv[j][4]; // Schlusskurs-Änderung
-                if (change >= 0) {
-                  gains.push(change);
-                  losses.push(0);
-                } else {
-                  gains.push(0);
-                  losses.push(Math.abs(change));
-                }
-              }
-              
-              const avgGain = gains.reduce((sum, val) => sum + val, 0) / period;
-              const avgLoss = losses.reduce((sum, val) => sum + val, 0) / period;
-              
-              if (avgLoss === 0) {
-                rsiData.push([ohlcv[i][0], 100]);
-              } else {
-                const rs = avgGain / avgLoss;
-                const rsi = 100 - (100 / (1 + rs));
-                rsiData.push([ohlcv[i][0], rsi]);
-              }
-            }
-          }
-          
-          return rsiData;
-        };
+        // Speichere die Kerzen-Daten
+        this.candleData = convertedData;
         
-        // Einfache RSI-Daten berechnen
-        const rsiData = calculateRSI(ohlcv);
-        
-        const chartData = {
-          chart: {
-            type: 'Candles',
-            data: ohlcv,
-            tf: interval
-          },
-          onchart: [],
-          offchart: [
-            {
-              name: "RSI, 14",
-              type: "RSI",
-              data: rsiData,
-              settings: {
-                lineWidth: 1,
-                color: '#85c',
-                bandColor: '#aaa',
-                bandOpacity: 0.3,
-                upperBand: 70,
-                lowerBand: 30
-              }
-            },
-            {
-              name: "Basic Test",
-              type: "BasicIndicator",
-              data: ohlcv // Einfacher Indikator zum Testen
-            }
-          ]
-        };
-        
-        // Setze die aktuellen Daten und aktualisiere das Chart
+        // Aktualisiere die aktuellen Symbol- und Intervall-Informationen
         this.currentSymbol = symbol;
         this.currentInterval = interval;
-        this.chart = new DataCube(chartData);
         
-        // Mache dieses Chart global verfügbar (für Debugging)
-        window.dc = this.chart;
+        // Berechne RSI und Matrix Series Indikatoren
+        this.updateIndicators();
         
-        this.binanceData = data;
+        // Setze den Zeitstempel der letzten Aktualisierung
         this.lastUpdateTime = new Date();
         
-        console.log(`Loaded ${ohlcv.length} candles for ${symbol} (${interval})`);
+        console.log(`Loaded ${convertedData.length} candles for ${symbol} (${interval})`);
         
       } catch (error) {
         console.error("Error fetching Binance data:", error);
         this.loadingMessage = `Fehler beim Laden der Daten: ${error.message}`;
       } finally {
         this.loadingData = false;
+      }
+    },
+    
+    // Aktualisiert alle Indikatoren basierend auf den aktuellen Kerzen-Daten
+    updateIndicators() {
+      // RSI berechnen
+      const rsiData = this.showRSI 
+        ? this.rsiIndicator.calculate(this.candleData)
+        : [];
+      
+      // Matrix Series berechnen
+      let matrixResult = null;
+      if (this.showMatrix && this.candleData.length) {
+        matrixResult = this.matrixIndicator.calculate(this.candleData);
+      }
+      
+      // Setze die berechneten Indikatordaten
+      this.indicators = [];
+      
+      // RSI zum Chart hinzufügen
+      if (this.showRSI && rsiData.length) {
+        this.indicators.push({
+          name: 'RSI',
+          data: rsiData,
+          options: {
+            color: '#85c',
+            lineWidth: 2,
+            priceScaleId: 'rsi',
+            priceFormat: {
+              type: 'custom',
+              formatter: value => value.toFixed(2),
+              minMove: 0.01,
+            },
+            scaleMargins: {
+              top: 0.1,
+              bottom: 0.1,
+            },
+          }
+        });
+        
+        // Horizontal Lines bei 30 und 70
+        this.indicators.push({
+          name: 'RSI-70',
+          data: rsiData.map(point => ({ time: point.time, value: 70 })),
+          options: {
+            color: 'rgba(255, 82, 82, 0.7)',
+            lineWidth: 1,
+            lineStyle: 1, // dashed
+            priceScaleId: 'rsi',
+            scaleMargins: {
+              top: 0.1,
+              bottom: 0.1,
+            },
+          }
+        });
+        
+        this.indicators.push({
+          name: 'RSI-30',
+          data: rsiData.map(point => ({ time: point.time, value: 30 })),
+          options: {
+            color: 'rgba(76, 175, 80, 0.7)',
+            lineWidth: 1,
+            lineStyle: 1, // dashed
+            priceScaleId: 'rsi',
+            scaleMargins: {
+              top: 0.1,
+              bottom: 0.1,
+            },
+          }
+        });
+      }
+      
+      // Matrix Series zum Chart hinzufügen
+      if (this.showMatrix && matrixResult) {
+        // Up-Linie
+        this.indicators.push({
+          name: 'Matrix-Up',
+          data: matrixResult.upLine,
+          options: {
+            color: '#4CAF50',
+            lineWidth: 2,
+            priceScaleId: 'matrix',
+            scaleMargins: {
+              top: 0.6,
+              bottom: 0.1,
+            },
+          }
+        });
+        
+        // Down-Linie
+        this.indicators.push({
+          name: 'Matrix-Down',
+          data: matrixResult.downLine,
+          options: {
+            color: '#FF5252',
+            lineWidth: 2,
+            priceScaleId: 'matrix',
+            scaleMargins: {
+              top: 0.6,
+              bottom: 0.1,
+            },
+          }
+        });
       }
     },
     
@@ -247,66 +275,50 @@ export default {
         if (!data || !data.length) return;
         
         const latestCandle = data[0];
-        const candleTime = parseInt(latestCandle[0]);
+        const time = Math.floor(parseInt(latestCandle[0]) / 1000);
+        
+        // Konvertiere die neueste Kerze
+        const newCandle = {
+          time: time,
+          open: parseFloat(latestCandle[1]),
+          high: parseFloat(latestCandle[2]),
+          low: parseFloat(latestCandle[3]),
+          close: parseFloat(latestCandle[4]),
+          volume: parseFloat(latestCandle[5])
+        };
         
         // Überprüfe, ob wir bereits eine Kerze mit dieser Zeit haben
-        const ohlcv = this.chart.data.chart.data;
-        const lastCandleIndex = ohlcv.length - 1;
+        const lastCandleIndex = this.candleData.length - 1;
         
-        if (lastCandleIndex >= 0 && ohlcv[lastCandleIndex][0] === candleTime) {
-          // Aktualisiere die letzte Kerze
-          ohlcv[lastCandleIndex] = [
-            candleTime,
-            parseFloat(latestCandle[1]), // Open
-            parseFloat(latestCandle[2]), // High
-            parseFloat(latestCandle[3]), // Low
-            parseFloat(latestCandle[4]), // Close
-            parseFloat(latestCandle[5])  // Volume
-          ];
-          console.log(`Updated last candle: ${new Date(candleTime).toLocaleTimeString()}`);
+        if (lastCandleIndex >= 0 && this.candleData[lastCandleIndex].time === time) {
+          // Ersetze die letzte Kerze
+          this.candleData[lastCandleIndex] = newCandle;
+          console.log(`Updated last candle: ${new Date(time * 1000).toLocaleTimeString()}`);
         } else {
           // Füge eine neue Kerze hinzu
-          ohlcv.push([
-            candleTime,
-            parseFloat(latestCandle[1]),
-            parseFloat(latestCandle[2]),
-            parseFloat(latestCandle[3]),
-            parseFloat(latestCandle[4]),
-            parseFloat(latestCandle[5])
-          ]);
-          console.log(`Added new candle: ${new Date(candleTime).toLocaleTimeString()}`);
+          this.candleData.push(newCandle);
+          console.log(`Added new candle: ${new Date(time * 1000).toLocaleTimeString()}`);
           
-          // Entferne älteste Kerze, wenn wir zu viele haben
-          if (ohlcv.length > 200) {
-            ohlcv.shift();
+          // Entferne die älteste Kerze, wenn zu viele vorhanden sind
+          if (this.candleData.length > 200) {
+            this.candleData.shift();
           }
         }
         
-        // Da das RSI-Skript die Daten automatisch berechnet, müssen wir
-        // nur sicherstellen, dass das Skript ausgeführt wird.
-        // Wir können es explizit aktualisieren, indem wir die Daten ändern lassen
-        if (this.chart.data.offchart && this.chart.data.offchart.length > 0) {
-          // RSI-Berechnungen werden durch den Skript-Motor behandelt
-          // Wir können zusätzlich manuell einige Beispielwerte einfügen für neueste Kerze
-          const rsiInd = this.chart.data.offchart[0];
-          if (rsiInd.type === 'RSI') {
-            // Berechne einen einfachen RSI-Wert basierend auf den letzten Kerzen
-            // Im echten Szenario wird das vom Skript-Engine berechnet
-            if (!rsiInd.data) rsiInd.data = [];
-            
-            // Füge einen Datenpunkt für Test hinzu
-            // Echter RSI würde durch Skript-Engine berechnet und automatisch hinzugefügt
-            const rsiValue = Math.floor(Math.random() * 40) + 30; // Zufällig zwischen 30-70
-            rsiInd.data.push([candleTime, rsiValue]);
-          }
-        }
-        
-        // Aktualisiere das DataCube-Objekt
-        this.chart.data_changed();
+        // Aktualisiere die Indikatoren
+        this.updateIndicators();
         this.lastUpdateTime = new Date();
         
       } catch (error) {
         console.error("Error updating chart data:", error);
+      }
+    },
+    
+    toggleLiveUpdates() {
+      if (this.liveUpdatesActive) {
+        this.stopLiveUpdates();
+      } else {
+        this.startLiveUpdates();
       }
     },
     
@@ -346,42 +358,58 @@ export default {
       console.log("Live updates stopped");
     }
   },
+  
+  watch: {
+    showRSI() {
+      this.updateIndicators();
+    },
+    showMatrix() {
+      this.updateIndicators();
+    }
+  },
+  
   mounted() {
     window.addEventListener('resize', this.onResize);
-    window.dc = this.chart;
+    this.onResize();
+    
+    // Lade die Daten beim Starten
+    this.fetchBinanceData();
   },
+  
   beforeUnmount() {
     window.removeEventListener('resize', this.onResize);
     this.stopLiveUpdates();
     
-    // Clean up any remaining intervals
+    // Bereinige verbleibende Intervalle
     if (this.countdownInterval) {
       clearInterval(this.countdownInterval);
       this.countdownInterval = null;
     }
   },
+  
   data() {
     return {
-      chart: new DataCube(Data),
+      candleData: [],
+      indicators: [],
       width: window.innerWidth,
-      height: window.innerHeight,
-      colors: {
-        colorBack: '#111',
-        colorGrid: '#222',
-        colorText: '#eee',
-      },
+      height: window.innerHeight - 50,
+      chartTheme: 'dark',
       loadingData: false,
       loadingMessage: "",
       currentSymbol: null,
       currentInterval: null,
-      selectedSymbol: "SOLUSDC", // Default symbol
+      selectedSymbol: "BTCUSDT", // Default symbol
       selectedInterval: "15m", // Default interval
-      binanceData: null,
       lastUpdateTime: null,
       updateInterval: null,
       liveUpdatesActive: false,
       nextUpdateIn: 15,
-      countdownInterval: null
+      countdownInterval: null,
+      showRSI: true,
+      showMatrix: true,
+      // Instanzen der Indikatoren
+      rsiIndicator: new RSIIndicator(14),
+      matrixIndicator: new MatrixSeries()
     };
   }
 };
@@ -398,6 +426,11 @@ body {
 
 .app-container {
   position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.chart-wrapper {
   width: 100%;
   height: 100%;
 }
@@ -434,6 +467,24 @@ body {
   background-color: #666;
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.indicator-controls {
+  margin-top: 10px;
+  border-top: 1px solid #444;
+  padding-top: 10px;
+}
+
+.indicator-toggle {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.indicator-toggle label {
+  color: white;
+  margin-left: 5px;
+  font-size: 14px;
 }
 
 .symbol-info {
