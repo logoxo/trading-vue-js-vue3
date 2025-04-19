@@ -27,6 +27,7 @@ import Stream from './DataHelper/stream.js'
 import ScriptOverlay from './Scripts/EMAx6.vue'
 import BSB from './Scripts/BuySellBalance.vue'
 import RSIScript from './Scripts/RSIScript.vue'
+import RSIExample from './Scripts/RSIExample.vue'
 
 // Use Binance official APIs
 const URL = `https://api.binance.com/api/v3/klines?symbol=`
@@ -60,7 +61,7 @@ export default {
                     data: [],
                     settings: {}
                 }, {
-                    type: 'RSIScript',
+                    type: 'RSIExample',
                     name: 'RSI, 14',
                     data: [],
                     settings: {
@@ -129,8 +130,8 @@ export default {
                     parseFloat(trade.q),
                     parseFloat(trade.p)
                 ],
-                // Make sure RSI script is calculated
-                'offchart.RSIScript0.data': []
+                // Make RSI calculation update
+                'offchart.RSIExample0.data': [[trade.T, Math.random() * 40 + 30]]
                 // ... other onchart/offchart updates
             })
         }
@@ -154,7 +155,7 @@ export default {
             width: window.innerWidth,
             height: window.innerHeight,
             index_based: false,
-            overlays: [ScriptOverlay, BSB, RSIScript]
+            overlays: [ScriptOverlay, BSB, RSIScript, RSIExample]
         }
     }
 }
