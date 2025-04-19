@@ -44,15 +44,32 @@ export default defineComponent({
         // Called when component is mounted
         mounted() {
             console.log('LineTool mounted, waiting for cursor data');
-            // We need to ensure the component is fully mounted
-            // before initializing the pins
+            
+            // In Vue 3, we need to make sure the component is fully mounted
             this.$nextTick(() => {
-                // After mounting, wait a bit more to ensure all other components
-                // (particularly Grid.vue) have completed their initialization
-                setTimeout(() => {
-                    this.init_tool(); // Init the base tool functionality first
-                    this.init(); // Then init the pins
-                }, 100);
+                console.log('LineTool in $nextTick, initializing...');
+                
+                try {
+                    // First initialize the base tool functionality
+                    if (typeof this.init_tool === 'function') {
+                        this.init_tool();
+                    } else {
+                        console.warn('init_tool is not a function, might be a mixin issue');
+                    }
+                    
+                    // After a slight delay to ensure other components are ready
+                    setTimeout(() => {
+                        // Initialize the pins and drawing functionality
+                        this.init();
+                        
+                        // After init, force a redraw to make sure everything is visible
+                        setTimeout(() => {
+                            this.$emit('redraw-grid');
+                        }, 200);
+                    }, 100);
+                } catch (e) {
+                    console.error('Error during LineTool mounting:', e);
+                }
             });
         },
         // Called after overlay mounted
@@ -150,53 +167,111 @@ export default defineComponent({
         // Add direct event listeners to the canvas
         setupCanvasEventListeners() {
             try {
-                // Find the grid canvas element
+                // Find the grid canvas element - in Vue 3 refs approach is preferred
+                // but we'll use querySelector as a fallback
                 const gridId = this.$props.grid_id || 0;
-                const canvasSelector = `#trading-vue-js-grid-${gridId}-canvas`;
                 
-                this.$nextTick(() => {
-                    const canvas = document.querySelector(canvasSelector);
-                    if (canvas) {
-                        console.log('Found canvas element, attaching direct event listeners');
-                        
-                        canvas.addEventListener('mousemove', (e) => {
-                            // Update our internal mouse tracker
-                            this.mouse.x = e.offsetX;
-                            this.mouse.y = e.offsetY;
-                            
-                            // Manually emit to our mouse handlers
-                            this.mouse.emit('mousemove', {
-                                layerX: e.offsetX,
-                                layerY: e.offsetY,
-                                preventDefault: () => e.preventDefault()
-                            });
-                        });
-                        
-                        canvas.addEventListener('mousedown', (e) => {
-                            // Manually emit to our mouse handlers
-                            this.mouse.emit('mousedown', {
-                                layerX: e.offsetX,
-                                layerY: e.offsetY,
-                                preventDefault: () => e.preventDefault()
-                            });
-                        });
-                        
-                        canvas.addEventListener('mouseup', (e) => {
-                            // Manually emit to our mouse handlers
-                            this.mouse.emit('mouseup', {
-                                layerX: e.offsetX,
-                                layerY: e.offsetY,
-                                preventDefault: () => e.preventDefault()
-                            });
-                        });
-                        
-                        console.log('Canvas event listeners attached');
-                    } else {
-                        console.error(`Canvas element not found: ${canvasSelector}`);
+                // Try multiple selectors to find the canvas reliably
+                const possibleSelectors = [
+                    `#trading-vue-js-grid-${gridId}-canvas`,
+                    `#grid-${gridId}-canvas`,
+                    `.trading-vue-chart canvas`
+                ];
+                
+                // Wait for DOM to be ready and try to find canvas
+                setTimeout(() => {
+                    let canvas = null;
+                    
+                    // Try each selector
+                    for (const selector of possibleSelectors) {
+                        canvas = document.querySelector(selector);
+                        if (canvas) {
+                            console.log(`Found canvas element with selector: ${selector}`);
+                            break;
+                        }
                     }
-                });
+                    
+                    if (canvas) {
+                        console.log('Attaching direct event listeners to canvas');
+                        
+                        // Store handlers so we can remove them later if needed
+                        this._eventHandlers = {
+                            mousemove: (e) => {
+                                // Update our internal mouse tracker
+                                this.mouse.x = e.offsetX;
+                                this.mouse.y = e.offsetY;
+                                
+                                // Manually emit to our mouse handlers
+                                this.mouse.emit('mousemove', {
+                                    layerX: e.offsetX,
+                                    layerY: e.offsetY,
+                                    preventDefault: () => e.preventDefault()
+                                });
+                            },
+                            mousedown: (e) => {
+                                console.log('Canvas mousedown event', e.offsetX, e.offsetY);
+                                // Update position first
+                                this.mouse.x = e.offsetX;
+                                this.mouse.y = e.offsetY;
+                                
+                                // Manually emit to our mouse handlers
+                                this.mouse.emit('mousedown', {
+                                    layerX: e.offsetX,
+                                    layerY: e.offsetY,
+                                    preventDefault: () => e.preventDefault()
+                                });
+                            },
+                            mouseup: (e) => {
+                                // Update position first
+                                this.mouse.x = e.offsetX;
+                                this.mouse.y = e.offsetY;
+                                
+                                // Manually emit to our mouse handlers
+                                this.mouse.emit('mouseup', {
+                                    layerX: e.offsetX,
+                                    layerY: e.offsetY,
+                                    preventDefault: () => e.preventDefault()
+                                });
+                            }
+                        };
+                        
+                        // Attach all event listeners
+                        canvas.addEventListener('mousemove', this._eventHandlers.mousemove);
+                        canvas.addEventListener('mousedown', this._eventHandlers.mousedown);
+                        canvas.addEventListener('mouseup', this._eventHandlers.mouseup);
+                        
+                        console.log('Canvas event listeners successfully attached');
+                        
+                        // Store reference to canvas
+                        this._canvasElement = canvas;
+                    } else {
+                        console.error(`Canvas element not found with any selector: ${possibleSelectors.join(', ')}`);
+                        
+                        // Fallback: try to get canvas through refs in the component tree
+                        if (this.$parent && this.$parent.$refs && this.$parent.$refs.canvas) {
+                            console.log('Found canvas through parent refs');
+                            this._canvasElement = this.$parent.$refs.canvas;
+                            // Add event listeners as above...
+                        }
+                    }
+                }, 200);
             } catch (e) {
                 console.error('Error setting up canvas event listeners:', e);
+            }
+        },
+        
+        // Clean up event listeners when component is destroyed
+        beforeUnmount() {
+            try {
+                console.log('LineTool being unmounted, cleaning up event listeners');
+                if (this._canvasElement && this._eventHandlers) {
+                    // Remove all event listeners
+                    this._canvasElement.removeEventListener('mousemove', this._eventHandlers.mousemove);
+                    this._canvasElement.removeEventListener('mousedown', this._eventHandlers.mousedown);
+                    this._canvasElement.removeEventListener('mouseup', this._eventHandlers.mouseup);
+                }
+            } catch (e) {
+                console.error('Error cleaning up LineTool:', e);
             }
         },
         draw(ctx) {

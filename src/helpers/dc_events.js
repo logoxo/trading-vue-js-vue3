@@ -490,12 +490,20 @@ export default class DCEvents {
                     'Current tool:', 
                     this.data.tool);
                 
-                // Force update to chart data to ensure the tool is rendered
-                this.tv.$set(this.data, 'drawingMode', true);
+                // Force update to chart data to ensure the tool is rendered - Vue 3 compatible
+                this.data.drawingMode = true;
                 
                 // Ensure cursor does not move back to Cursor automatically
                 if (this.data.tool !== 'Cursor') {
-                    this.tv.$set(this.data, 'tool', this.data.tool);
+                    // In Vue 3, assigning the same value can trigger reactivity
+                    this.data.tool = this.data.tool;
+                }
+                
+                // Force chart update if possible
+                if (this.tv && this.tv.$refs && this.tv.$refs.chart) {
+                    if (typeof this.tv.$refs.chart.update === 'function') {
+                        this.tv.$refs.chart.update();
+                    }
                 }
                 
                 // Emit a custom event so any components watching can respond
@@ -720,11 +728,21 @@ export default class DCEvents {
         // Ensure drawing mode is enabled
         this.data.drawingMode = true;
         
-        // Force reactive update using Vue.set for critical properties
-        if (this.tv && this.tv.$set) {
-            this.tv.$set(this.data, 'tool', this.data.tool);
-            this.tv.$set(this.data, 'drawingMode', true);
-            this.tv.$set(this.data, 'selected', sett.$uuid);
+        // Vue 3 doesn't have $set, so we update reactively differently
+        try {
+            // Directly modify the properties to trigger reactivity
+            this.data.tool = this.data.tool;
+            this.data.drawingMode = true;
+            this.data.selected = sett.$uuid;
+            
+            // If possible, force an update on the chart
+            if (this.tv && this.tv.$refs && this.tv.$refs.chart) {
+                if (typeof this.tv.$refs.chart.update === 'function') {
+                    this.tv.$refs.chart.update();
+                }
+            }
+        } catch (e) {
+            console.error('Error updating reactive properties:', e);
         }
         
         this.add_trash_icon();
