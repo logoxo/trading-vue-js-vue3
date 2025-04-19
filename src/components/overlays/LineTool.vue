@@ -386,159 +386,139 @@ export default defineComponent({
         },
         draw(ctx) {
             try {
-                console.log('LineTool.draw called', { settings: this.$props.settings });
+                // SUPER DEBUG MODE: Draw simple red line regardless of settings
+                console.log('SUPER DEBUG: Drawing test red line');
                 
-                // CRITICAL: Clear any previous path
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                
-                // Ensure collisions array is initialized
-                this.collisions = this.collisions || [];
-                
-                // Get coordinates from either pins or settings
-                const settings = this.$props.settings || {};
-                let p1 = this.p1 || settings.p1;
-                let p2 = this.p2 || settings.p2;
-                
-                // Debug info
-                console.log('Points from settings', { 
-                    p1: settings.p1,
-                    p2: settings.p2,
-                    computedP1: this.p1,
-                    computedP2: this.p2
-                });
-                
-                // Validate we have both points
-                if (!p1 || !p2 || !Array.isArray(p1) || !Array.isArray(p2)) {
-                    console.error('LineTool.draw: Invalid points', { p1, p2 });
+                // Test if ctx is valid
+                if (!ctx) {
+                    console.error('SUPER DEBUG: ctx is null!');
                     return;
                 }
                 
-                // Get layout for coordinate conversion
-                const layout = this.$props.layout;
-                if (!layout) {
-                    console.error('LineTool.draw: No layout available');
-                    return;
-                }
+                // Debug info about the context
+                console.log('SUPER DEBUG: ctx type =', typeof ctx);
+                console.log('SUPER DEBUG: ctx methods =', Object.keys(ctx).filter(k => typeof ctx[k] === 'function'));
+                console.log('SUPER DEBUG: ctx properties =', Object.keys(ctx).filter(k => typeof ctx[k] !== 'function'));
                 
-                // Check if the necessary conversion functions exist
-                if (typeof layout.t2screen !== 'function' || typeof layout.$2screen !== 'function') {
-                    console.error('LineTool.draw: Missing conversion functions');
-                    return;
-                }
-                
-                // Convert time-price coordinates to screen coordinates
+                // CRITICAL: Reset transformations
                 try {
-                    var x1 = layout.t2screen(p1[0]);
-                    var y1 = layout.$2screen(p1[1]);
-                    var x2 = layout.t2screen(p2[0]);
-                    var y2 = layout.$2screen(p2[1]);
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
                 } catch (e) {
-                    console.error('Coordinate conversion error:', e);
-                    return;
+                    console.error('SUPER DEBUG: setTransform error', e);
                 }
                 
-                console.log('Drawing line with coords:', {
-                    from: { x: x1, y: y1 },
-                    to: { x: x2, y: y2 },
-                    rawFrom: p1,
-                    rawTo: p2
-                });
+                // Get any information about the canvas size
+                const layout = this.$props.layout || {};
+                const width = layout.width || 800;
+                const height = layout.height || 400;
                 
-                // Set line style
-                ctx.lineWidth = this.line_width;
-                ctx.strokeStyle = this.color;
+                console.log('SUPER DEBUG: Canvas size', width, height);
                 
-                // START FRESH PATH
-                ctx.beginPath();
-                
-                // Basic segment drawing with verification
+                // Hard-coded test drawing across the entire canvas
                 try {
-                    ctx.moveTo(x1, y1);
-                    ctx.lineTo(x2, y2);
+                    // Set strong visible style
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = '#FF0000';
+                    ctx.fillStyle = '#FF0000';
                     
-                    // Debugging: Draw a small circle at each point
-                    ctx.fillStyle = 'red';
-                    ctx.arc(x1, y1, 3, 0, Math.PI * 2);
-                    ctx.fill();
+                    // START NEW PATH
                     ctx.beginPath();
-                    ctx.arc(x2, y2, 3, 0, Math.PI * 2);
+                    
+                    // Draw diagonal line across the canvas
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(width, height);
+                    
+                    // Draw a simple square in the middle
+                    const midX = width / 2;
+                    const midY = height / 2;
+                    ctx.rect(midX - 25, midY - 25, 50, 50);
+                    
+                    // Actually apply the stroke
+                    ctx.stroke();
+                    
+                    // Draw filled circle at each corner for visibility
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                    ctx.arc(width, height, 5, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Go back to line drawing
-                    ctx.beginPath();
-                    ctx.moveTo(x1, y1);
-                    ctx.lineTo(x2, y2);
+                    console.log('SUPER DEBUG: Test drawing completed');
                 } catch (e) {
-                    console.error('Error drawing basic line:', e);
-                    return;
+                    console.error('SUPER DEBUG: Error during test drawing', e);
                 }
                 
-                // Handle extensions and rays
+                // Attempt to draw based on settings if available
                 try {
-                    if (settings.extended || settings.ray) {
-                        const w = layout.width;
-                        const h = layout.height;
+                    const settings = this.$props.settings || {};
+                    let p1 = this.p1 || settings.p1;
+                    let p2 = this.p2 || settings.p2;
+                    
+                    console.log('SUPER DEBUG: Settings pins', { p1, p2, settings });
+                    
+                    // Only try to draw if we have valid points
+                    if (p1 && p2 && Array.isArray(p1) && Array.isArray(p2) && 
+                        layout && typeof layout.t2screen === 'function' && typeof layout.$2screen === 'function') {
                         
-                        // Calculate line slope
-                        const dx = x2 - x1;
-                        const dy = y2 - y1;
-                        const slope = dy / dx;
+                        // Convert coordinates
+                        const x1 = layout.t2screen(p1[0]);
+                        const y1 = layout.$2screen(p1[1]);
+                        const x2 = layout.t2screen(p2[0]);
+                        const y2 = layout.$2screen(p2[1]);
                         
-                        // Direction of the line
-                        const s = Math.sign(dx || dy);
+                        console.log('SUPER DEBUG: Converted coords', { x1, y1, x2, y2 });
                         
-                        // Extension length
-                        const extX = w * s * 2;
-                        let extY = extX * slope;
+                        // Draw green line between actual points
+                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = '#00FF00';
+                        ctx.fillStyle = '#00FF00';
                         
-                        // Handle vertical lines
-                        if (!isFinite(extY)) {
-                            extY = h * s;
-                        }
+                        ctx.beginPath();
+                        ctx.moveTo(x1, y1);
+                        ctx.lineTo(x2, y2);
+                        ctx.stroke();
                         
-                        // Draw forward extension
-                        ctx.moveTo(x2, y2);
-                        ctx.lineTo(x2 + extX, y2 + extY);
+                        // Draw circles at points
+                        ctx.beginPath();
+                        ctx.arc(x1, y1, 6, 0, Math.PI * 2);
+                        ctx.arc(x2, y2, 6, 0, Math.PI * 2);
+                        ctx.fill();
                         
-                        // Draw backward extension if it's not a ray
-                        if (settings.extended && !settings.ray) {
-                            ctx.moveTo(x1, y1);
-                            ctx.lineTo(x1 - extX, y1 - extY);
+                        console.log('SUPER DEBUG: Drew actual line');
+                    }
+                } catch (e) {
+                    console.error('SUPER DEBUG: Error drawing actual line', e);
+                }
+                
+                // Try to access and use the parent canvas directly as last resort
+                try {
+                    if (this.$parent && this.$parent.$refs && this.$parent.$refs.canvas) {
+                        const parentCanvas = this.$parent.$refs.canvas;
+                        const parentCtx = parentCanvas.getContext('2d');
+                        
+                        if (parentCtx) {
+                            console.log('SUPER DEBUG: Accessed parent canvas directly!');
+                            
+                            // Draw blue X across the canvas
+                            parentCtx.lineWidth = 4;
+                            parentCtx.strokeStyle = '#0000FF';
+                            
+                            parentCtx.beginPath();
+                            parentCtx.moveTo(0, 0);
+                            parentCtx.lineTo(parentCanvas.width, parentCanvas.height);
+                            parentCtx.moveTo(parentCanvas.width, 0);
+                            parentCtx.lineTo(0, parentCanvas.height);
+                            parentCtx.stroke();
+                            
+                            console.log('SUPER DEBUG: Drew blue X on parent canvas');
                         }
                     }
                 } catch (e) {
-                    console.error('Error drawing extensions:', e);
+                    console.error('SUPER DEBUG: Error accessing parent canvas', e);
                 }
                 
-                // ACTUALLY DRAW THE STROKE - separate try/catch
-                try {
-                    ctx.stroke();
-                } catch (e) {
-                    console.error('Error during stroke:', e);
-                }
-                
-                // Create collision detection
-                try {
-                    this.collisions = [];
-                    this.collisions.push((x, y) => {
-                        const distance = this.pointToLineDistance([x, y], [x1, y1], [x2, y2]);
-                        const threshold = 5; // Detection threshold
-                        return distance < threshold;
-                    });
-                } catch (e) {
-                    console.error('Error setting up collision detection:', e);
-                }
-                
-                // Draw the pin handles
-                try {
-                    this.render_pins(ctx);
-                } catch (e) {
-                    console.error('Error rendering pins:', e);
-                }
-                
-                console.log('LineTool draw completed successfully');
+                console.log('SUPER DEBUG: draw method finished');
             } catch (e) {
-                console.error('Fatal error in LineTool.draw:', e);
+                console.error('SUPER DEBUG: Fatal error in draw', e);
             }
         },
         
@@ -620,8 +600,185 @@ export default defineComponent({
         return {}
     },
     render() { 
-        // Custom empty render function that returns actual element
-        return h('div', { style: { display: 'none' } })
+        return h('div', {
+            class: 'line-tool-wrapper',
+            style: {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 1000
+            },
+            onMounted: () => {
+                console.log('Line tool wrapper mounted');
+                this.$nextTick(() => {
+                    // After mounted, try to find canvas and draw directly
+                    this.findCanvasAndDraw();
+                });
+            }
+        });
+    },
+    
+    beforeUnmount() {
+        // Clean up our direct drawing if needed
+        this.cleanupDirectDrawing();
+    },
+    
+    // New methods for direct canvas access
+    methods: {
+        findCanvasAndDraw() {
+            try {
+                console.log('Attempting to find canvas for direct drawing');
+                
+                // First try to find by grid id
+                const gridId = this.$props.grid_id || 0;
+                let canvas = document.querySelector(`#trading-vue-js-grid-${gridId}-canvas`);
+                
+                if (!canvas) {
+                    // Try more general selectors
+                    canvas = document.querySelector('.trading-vue-chart canvas');
+                }
+                
+                if (!canvas) {
+                    // Try any canvas on the page
+                    canvas = document.querySelector('canvas');
+                }
+                
+                if (canvas) {
+                    console.log('Found canvas for direct drawing!', canvas);
+                    this.directCanvas = canvas;
+                    this.directCtx = canvas.getContext('2d');
+                    
+                    // Set up a MutationObserver to watch for chart updates
+                    this.setupMutationObserver(canvas);
+                    
+                    // Draw immediately
+                    this.drawDirectly();
+                    
+                    // Also set up interval for periodic redraw
+                    this.directDrawInterval = setInterval(() => {
+                        this.drawDirectly();
+                    }, 1000); // Redraw every second
+                } else {
+                    console.error('Could not find any canvas for direct drawing');
+                }
+            } catch (e) {
+                console.error('Error in findCanvasAndDraw:', e);
+            }
+        },
+        
+        setupMutationObserver(canvas) {
+            try {
+                // Watch for any changes to the chart that might require redrawing
+                this.observer = new MutationObserver((mutations) => {
+                    // When any changes occur, redraw
+                    this.drawDirectly();
+                });
+                
+                // Watch the parent element for any changes
+                if (canvas.parentElement) {
+                    this.observer.observe(canvas.parentElement, {
+                        childList: true,
+                        attributes: true,
+                        subtree: true
+                    });
+                    console.log('MutationObserver set up on canvas parent');
+                }
+            } catch (e) {
+                console.error('Error setting up MutationObserver:', e);
+            }
+        },
+        
+        drawDirectly() {
+            try {
+                if (!this.directCtx || !this.directCanvas) {
+                    console.error('No direct canvas context available');
+                    return;
+                }
+                
+                const settings = this.$props.settings || {};
+                const layout = this.$props.layout;
+                
+                if (!layout) {
+                    console.error('No layout available for coordinate conversion');
+                    return;
+                }
+                
+                // Draw directly on the canvas
+                const ctx = this.directCtx;
+                const width = this.directCanvas.width;
+                const height = this.directCanvas.height;
+                
+                // Save current state
+                ctx.save();
+                
+                // Draw red diagonal line for visibility test
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#FF0000';
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(width, height);
+                ctx.stroke();
+                
+                // Try to draw actual line if we have pin positions
+                let p1 = this.p1 || settings.p1;
+                let p2 = this.p2 || settings.p2;
+                
+                if (p1 && p2 && Array.isArray(p1) && Array.isArray(p2) && 
+                    typeof layout.t2screen === 'function' && typeof layout.$2screen === 'function') {
+                    
+                    // Convert coordinates
+                    const x1 = layout.t2screen(p1[0]);
+                    const y1 = layout.$2screen(p1[1]);
+                    const x2 = layout.t2screen(p2[0]);
+                    const y2 = layout.$2screen(p2[1]);
+                    
+                    // Draw actual line in green
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = '#00FF00';
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.stroke();
+                    
+                    // Draw pin handles
+                    ctx.fillStyle = '#0088FF';
+                    ctx.beginPath();
+                    ctx.arc(x1, y1, 5, 0, Math.PI * 2);
+                    ctx.arc(x2, y2, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Restore state
+                ctx.restore();
+                
+                console.log('Direct drawing completed');
+            } catch (e) {
+                console.error('Error in direct drawing:', e);
+            }
+        },
+        
+        cleanupDirectDrawing() {
+            console.log('Cleaning up direct drawing resources');
+            
+            // Clear the redraw interval
+            if (this.directDrawInterval) {
+                clearInterval(this.directDrawInterval);
+                this.directDrawInterval = null;
+            }
+            
+            // Disconnect the observer
+            if (this.observer) {
+                this.observer.disconnect();
+                this.observer = null;
+            }
+            
+            // Clean up references
+            this.directCanvas = null;
+            this.directCtx = null;
+        }
     }
 })
 </script>
