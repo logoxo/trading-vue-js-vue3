@@ -29,49 +29,127 @@ export default {
                 conf: { 'renderer': 'Splines' },
                 computed: { },
                 draw(ctx) {
-                    // Verwende Splines als Basisfunktionalität, aber füge benutzerdefinierte Zeichnung hinzu
-                    if (!this._candles) return
+                    // Matrix-Series Hauptzeichenmethode
                     
-                    const layout = this.$props.layout
-                    const candles = this._candles
+                    // Überprüfen, ob Daten vorhanden sind
+                    if (!this._candles || !this._candles.length) {
+                        console.log("Keine Daten zum Zeichnen vorhanden");
+                        return;
+                    }
                     
-                    // Splines bereits gezeichnet, jetzt Markerungen für starke Trends hinzufügen
+                    const layout = this.$props.layout;
+                    if (!layout) return;
+                    
+                    const candles = this._candles;
+                    
+                    // Skala anpassen, um mehr im sichtbaren Bereich zu zeigen
+                    // Suche Min/Max-Werte
+                    let min = Infinity;
+                    let max = -Infinity;
+                    
                     for (let i = 0; i < candles.length; i++) {
-                        const t = candles[i][0]
-                        const open = candles[i][1]
-                        const high = candles[i][2]
-                        const low = candles[i][3]
-                        const close = candles[i][4]
-                        const color = candles[i][5]
+                        const low = candles[i][3];
+                        const high = candles[i][2];
                         
-                        // Konvertiere Zeit und Preis zu Bildschirmkoordinaten
-                        const x = layout.t2screen(t)
-                        const y_open = layout.$2screen(open)
-                        const y_high = layout.$2screen(high)
-                        const y_low = layout.$2screen(low)
-                        const y_close = layout.$2screen(close)
+                        if (low < min) min = low;
+                        if (high > max) max = high;
+                    }
+                    
+                    // Skala erweitern für bessere Sichtbarkeit
+                    const range = max - min;
+                    min -= range * 0.1;
+                    max += range * 0.1;
+                    
+                    // Canvas-Stil setzen
+                    ctx.lineWidth = 1.5;
+                    
+                    // Zeichne den Hauptlinienindikator (einfache Linie der Close-Werte)
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#9c27b0'; // Violett als Hauptlinie
+                    
+                    let first = true;
+                    for (let i = 0; i < candles.length; i++) {
+                        const t = candles[i][0];
+                        const val = candles[i][4]; // Close-Wert
+                        
+                        if (isNaN(val)) continue;
+                        
+                        const x = layout.t2screen(t);
+                        const y = layout.$2screen(val);
+                        
+                        if (first) {
+                            ctx.moveTo(x, y);
+                            first = false;
+                        } else {
+                            ctx.lineTo(x, y);
+                        }
+                    }
+                    ctx.stroke();
+                    
+                    // Jetzt Kerzen zeichnen
+                    for (let i = 0; i < candles.length; i++) {
+                        const t = candles[i][0];
+                        const open = candles[i][1];
+                        const high = candles[i][2];
+                        const low = candles[i][3];
+                        const close = candles[i][4];
+                        const color = candles[i][5];
+                        
+                        const x = layout.t2screen(t);
+                        const y_open = layout.$2screen(open);
+                        const y_high = layout.$2screen(high);
+                        const y_low = layout.$2screen(low);
+                        const y_close = layout.$2screen(close);
                         
                         if (!isNaN(y_open) && !isNaN(y_close)) {
                             // Kerzenkörper zeichnen
-                            ctx.strokeStyle = color
-                            ctx.fillStyle = color
+                            ctx.strokeStyle = color;
+                            ctx.fillStyle = color;
                             
-                            const bodyWidth = 8 // Breite der Kerze
+                            const bodyWidth = 6; // Schmälere Kerze
                             
                             // Docht zeichnen
-                            ctx.beginPath()
-                            ctx.moveTo(x, y_high)
-                            ctx.lineTo(x, y_low)
-                            ctx.stroke()
+                            ctx.beginPath();
+                            ctx.moveTo(x, y_high);
+                            ctx.lineTo(x, y_low);
+                            ctx.stroke();
                             
                             // Kerzenkörper zeichnen
+                            const y_start = Math.min(y_open, y_close);
+                            const height = Math.abs(y_close - y_open);
+                            
                             ctx.fillRect(
                                 x - bodyWidth/2,
-                                y_open, 
+                                y_start, 
                                 bodyWidth, 
-                                y_close - y_open
-                            )
+                                height || 1 // Mindestens 1px Höhe
+                            );
                         }
+                    }
+                    
+                    // Support/Resistance-Linien zeichnen
+                    if (this.bands && this.bands.length) {
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([5, 3]); // Gestrichelte Linie für Bänder
+                        
+                        for (const band of this.bands) {
+                            ctx.strokeStyle = band.color || '#888';
+                            const y = layout.$2screen(band.value);
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(0, y);
+                            ctx.lineTo(layout.width, y);
+                            ctx.stroke();
+                            
+                            // Text für die Bänder
+                            if (band.text) {
+                                ctx.fillStyle = band.color || '#888';
+                                ctx.font = '11px Arial';
+                                ctx.fillText(band.text, 5, y - 5);
+                            }
+                        }
+                        
+                        ctx.setLineDash([]); // Zurücksetzen auf normale Linie
                     }
                 },
                 update: `
@@ -247,13 +325,52 @@ export default {
                     ])
                     
                     // Ausgabe erstellen - Daten für den Indikator setzen
-                    // console.log(candles); // Debugging
+                    console.log("Matrix-Series berechnet, Daten-Länge:", candles.length);
+                    
+                    // Lineplot-Daten erstellen (erster Datensatz für das Grid-System)
+                    let data = [];
+                    for (let i = 0; i < candles.length; i++) {
+                        if (i % 3 === 0) { // Reduziere Datenpunkte für bessere Performance
+                            data.push([
+                                candles[i][0], // timestamp
+                                up[i]          // up-Wert als Hauptlinie
+                            ]);
+                        }
+                    }
+                    
+                    // Setze numerische Skala-Begrenzungen
+                    // Finde Min/Max der Daten
+                    let min = Infinity;
+                    let max = -Infinity;
+                    
+                    for (let i = 0; i < candles.length; i++) {
+                        if (Ll[i] < min) min = Ll[i];
+                        if (Hh[i] > max) max = Hh[i];
+                    }
+                    
+                    // Erweitere den Bereich für bessere Sichtbarkeit
+                    const range = max - min;
+                    min = min - range * 0.1;
+                    max = max + range * 0.1;
+                    
+                    // Überprüfe, ob die Werte gültig sind
+                    if (!isNaN(min) && !isNaN(max) && min !== Infinity && max !== -Infinity) {
+                        // Setze die y-Achsen-Begrenzungen
+                        this.$setYrange([min, max]);
+                    }
                     
                     // Für TradingVue, setze den ersten Datenpunkt
-                    this[0] = candles.map(candle => [candle[0], candle[4]])
+                    this[0] = data;
                     
                     // Speichere die vollständigen Candle-Daten für den Renderer
-                    this._candles = candles
+                    this._candles = candles;
+                    
+                    // Debug-Informationen
+                    console.log("Matrix-Series:", {
+                        candles_count: candles.length,
+                        data_count: data.length,
+                        y_range: [min, max]
+                    });
                     
                     // Support/Resistance Linien
                     if (dynamic) {
