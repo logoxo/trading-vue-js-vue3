@@ -449,9 +449,14 @@ export default class DCEvents {
         
         // First do some debug logging to help identify issues
         console.log('Grid mousedown', {
+            grid_id: args[0],
             tool: this.data.tool,
             drawingMode: this.data.drawingMode,
-            eventType: args[1] ? args[1].type : 'unknown',
+            event: args[1] ? {
+                type: args[1].type,
+                x: args[1].layerX,
+                y: args[1].layerY
+            } : 'unknown',
             hasTools: this.data.tools && this.data.tools.length > 0,
             availableTools: this.data.tools ? this.data.tools.map(t => t.type) : []
         });
@@ -460,25 +465,49 @@ export default class DCEvents {
         if (this.data.tool && this.data.tool !== 'Cursor') {
             console.log('Starting drawing mode with tool:', this.data.tool);
             
-            // Reset drawing mode for safety
-            this.data.drawingMode = false;
-            
-            // Build the tool immediately rather than using setTimeout
             try {
-                // Start drawing mode
+                // Start drawing mode - critical that this is true
                 this.data.drawingMode = true;
-                this.build_tool(args[0]);
+                
+                // Ensure the tool isn't already active to avoid duplication
+                const existingTool = this.find_tool_by_type(this.data.tool);
+                if (existingTool) {
+                    console.log('Tool already exists, setting it to active', existingTool);
+                    // Set it to active state instead of creating a new one
+                    this.merge(`${existingTool.id}.settings`, {
+                        $selected: true,
+                        $state: 'wip'
+                    });
+                    this.data.selected = `${existingTool.id}-${Utils.now()}`;
+                } else {
+                    // Create a new tool
+                    console.log('Building new tool instance');
+                    this.build_tool(args[0]);
+                }
                 
                 console.log('Drawing mode enabled:', 
                     this.data.drawingMode, 
                     'Current tool:', 
                     this.data.tool);
                 
+                // Force update to chart data to ensure the tool is rendered
+                this.tv.$set(this.data, 'drawingMode', true);
+                
+                // Ensure cursor does not move back to Cursor automatically
+                if (this.data.tool !== 'Cursor') {
+                    this.tv.$set(this.data, 'tool', this.data.tool);
+                }
+                
                 // Emit a custom event so any components watching can respond
                 this.tv.$emit('custom-event', {
                     event: 'drawing-started',
                     args: [this.data.tool, args[0]]
                 });
+                
+                // Force a data update to ensure all components react
+                if (this.tv.$refs.chart) {
+                    this.tv.$refs.chart.update();
+                }
             } catch (e) {
                 console.error('Error starting drawing mode:', e);
             }
@@ -494,6 +523,29 @@ export default class DCEvents {
         } else {
             rem();
         }
+    }
+    
+    // Helper method to find existing tools by type
+    find_tool_by_type(toolType) {
+        // Look in onchart overlays
+        for (const ov of this.data.onchart || []) {
+            if (ov.type === 'LineTool' && 
+                ((ov.name && ov.name.includes(toolType)) || 
+                 (ov.settings && ov.settings.lineType === toolType))) {
+                return ov;
+            }
+        }
+        
+        // Look in offchart overlays
+        for (const ov of this.data.offchart || []) {
+            if (ov.type === 'LineTool' && 
+                ((ov.name && ov.name.includes(toolType)) || 
+                 (ov.settings && ov.settings.lineType === toolType))) {
+                return ov;
+            }
+        }
+        
+        return null;
     }
 
     drawing_mode_off() {
@@ -577,6 +629,9 @@ export default class DCEvents {
         if(!('z-index' in sett)) sett['z-index'] = 100
         sett.$selected = true
         sett.$state = 'wip'
+        
+        // Store the original tool type for later reference
+        sett.lineType = type;
 
         let side = grid_id ? 'offchart' : 'onchart'
         
@@ -590,15 +645,64 @@ export default class DCEvents {
             type === 'Segment' || type === 'Extended' || type === 'Ray') {
             finalType = 'LineTool';
             console.log('Setting final type to LineTool for line drawing');
+            
+            // Make sure we store the correct settings for this line type
+            if (type === 'Extended' || toolType === 'Extended') {
+                sett.extended = true;
+                sett.ray = false;
+            } else if (type === 'Ray' || toolType === 'Ray') {
+                sett.ray = true;
+                sett.extended = false;
+            } else {
+                // Regular segment (default)
+                sett.ray = false;
+                sett.extended = false;
+            }
         } else {
             finalType = toolType;
         }
             
-        console.log('Adding tool with type:', finalType);
+        console.log('Adding tool with type:', finalType, 'settings:', sett);
         
         // Make sure the tool has a recognizable name
         const displayName = proto.name || 
             (finalType === 'LineTool' ? (type === 'Segment' ? 'Line Segment' : type) : toolType);
+        
+        // Create default pin positions if needed for line tools
+        if (finalType === 'LineTool' && !sett.p1) {
+            // Get chart dimensions from the layout if available
+            let width = 0, height = 0;
+            if (this.tv && this.tv.$refs.chart && this.tv.$refs.chart._layout) {
+                const layout = this.tv.$refs.chart._layout;
+                const grid = layout.grids[grid_id || 0];
+                width = grid ? grid.width : 800;
+                height = grid ? grid.height : 400;
+            } else {
+                // Default dimensions
+                width = 800;
+                height = 400;
+            }
+            
+            // Calculate mid point and offsets
+            const midX = width / 2;
+            const midY = height / 2;
+            
+            // Get timestamp for positions if available
+            let now = Date.now();
+            let chartData = this.tv.$refs.chart ? this.tv.$refs.chart.ohlcv : [];
+            let timeRange = 3600000; // 1 hour default
+            
+            if (chartData && chartData.length) {
+                // Use actual chart time range if available
+                timeRange = (chartData[chartData.length - 1][0] - chartData[0][0]) / 10;
+            }
+            
+            // Create pin positions (default or calculated)
+            sett.p1 = [now - timeRange, midY - 20];
+            sett.p2 = [now, midY + 20];
+            
+            console.log('Created default pin positions for line tool:', sett.p1, sett.p2);
+        }
         
         let id = this.add(side, {
             name: displayName,
@@ -616,7 +720,17 @@ export default class DCEvents {
         // Ensure drawing mode is enabled
         this.data.drawingMode = true;
         
-        this.add_trash_icon()
+        // Force reactive update using Vue.set for critical properties
+        if (this.tv && this.tv.$set) {
+            this.tv.$set(this.data, 'tool', this.data.tool);
+            this.tv.$set(this.data, 'drawingMode', true);
+            this.tv.$set(this.data, 'selected', sett.$uuid);
+        }
+        
+        this.add_trash_icon();
+        
+        // Return the ID for further reference
+        return id;
     }
 
     // Remove selected / Remove all, etc

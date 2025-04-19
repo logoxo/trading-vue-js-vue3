@@ -125,28 +125,57 @@ export default class Pin {
     }
 
     update() {
-        const cursor = this.comp.$props.cursor || {};
-        
-        // For Vue 3 compatibility, ensure cursor properties exist
-        if (!cursor) {
-            console.error('Pin update called with no cursor data');
-            return;
-        }
-        
-        this.y$ = cursor.y$ || 0
-        this.y = cursor.y || 0
-        this.t = cursor.t || 0
-        this.x = cursor.x || 0
-        
-        console.log(`Pin ${this.name} updated to position:`, { x: this.x, y: this.y, t: this.t, y$: this.y$ });
-
-        // Reset the settings attached to the pin (position)
         try {
-            this.comp.$emit('change-settings', {
-                [this.name]: [this.t, this.y$]
-            });
+            const cursor = this.comp.$props.cursor || {};
+            
+            // For Vue 3 compatibility, ensure cursor properties exist
+            if (!cursor) {
+                console.warn('Pin update called with no cursor data, using mouse coordinates');
+                
+                // Fall back to the mouse object if available
+                if (this.mouse) {
+                    const layout = this.comp.layout || {};
+                    
+                    // Convert screen coordinates to chart coordinates
+                    if (layout.t2screen && layout.$2screen && 
+                        typeof layout.screen2t === 'function' && 
+                        typeof layout.screen2$ === 'function') {
+                        
+                        this.t = layout.screen2t(this.mouse.x);
+                        this.y$ = layout.screen2$(this.mouse.y);
+                        this.x = this.mouse.x;
+                        this.y = this.mouse.y;
+                        
+                    } else {
+                        // Fallback to mouse coordinates directly
+                        this.x = this.mouse.x;
+                        this.y = this.mouse.y;
+                        this.t = Date.now(); // Use current timestamp
+                        this.y$ = 0; // Default value
+                    }
+                } else {
+                    return; // Can't update without cursor or mouse
+                }
+            } else {
+                // Normal case - use cursor data
+                this.y$ = cursor.y$ !== undefined ? cursor.y$ : 0;
+                this.y = cursor.y !== undefined ? cursor.y : 0;
+                this.t = cursor.t !== undefined ? cursor.t : Date.now();
+                this.x = cursor.x !== undefined ? cursor.x : 0;
+            }
+            
+            console.log(`Pin ${this.name} updated to position:`, { x: this.x, y: this.y, t: this.t, y$: this.y$ });
+    
+            // Update the settings to reflect the new position
+            if (this.comp && typeof this.comp.$emit === 'function') {
+                this.comp.$emit('change-settings', {
+                    [this.name]: [this.t, this.y$]
+                });
+            } else {
+                console.warn(`Cannot emit change-settings for pin ${this.name}, comp.$emit is not a function`);
+            }
         } catch (e) {
-            console.error('Error emitting pin change-settings:', e);
+            console.error(`Error updating pin ${this.name}:`, e);
         }
     }
 
@@ -190,35 +219,102 @@ export default class Pin {
     }
 
     mousedown(event, force = false) {
-        if (Utils.default_prevented(event) && !force) return
-        switch (this.state) {
-            case 'tracking':
-                this.state = 'settled'
-                if (this.on_settled) this.on_settled()
-                this.comp.$emit('scroll-lock', false)
-                break
-            case 'settled':
-                if (this.hidden) return
-                if (this.hover()) {
-                    this.state = 'dragging'
-                    this.moved = false
-                    this.comp.$emit('scroll-lock', true)
-                    this.comp.$emit('object-selected')
-                }
-                break
-        }
-        if (this.hover()) {
-            event.preventDefault()
+        try {
+            console.log(`Pin ${this.name} mousedown, state: ${this.state}, forced: ${force}`);
+            
+            // Skip if event is already handled (unless forced)
+            if (!force && event && Utils.default_prevented(event)) {
+                console.log(`Pin ${this.name} mousedown: event already handled`);
+                return;
+            }
+            
+            // Handle different pin states
+            switch (this.state) {
+                case 'tracking':
+                    // When in tracking state, mousedown settles the pin
+                    console.log(`Pin ${this.name} tracking -> settled`);
+                    this.state = 'settled';
+                    
+                    // Get current position from the cursor if available
+                    if (this.comp.$props.cursor) {
+                        this.update();
+                    }
+                    
+                    // Call the settled callback if it exists
+                    if (this.on_settled) {
+                        console.log(`Pin ${this.name} calling on_settled`);
+                        this.on_settled();
+                    }
+                    
+                    // Release scroll lock
+                    if (this.comp && typeof this.comp.$emit === 'function') {
+                        this.comp.$emit('scroll-lock', false);
+                    }
+                    break;
+                    
+                case 'settled':
+                    // When settled, mousedown only works if it's on the pin
+                    if (this.hidden) {
+                        console.log(`Pin ${this.name} is hidden, ignoring mousedown`);
+                        return;
+                    }
+                    
+                    // Check if the mouse is over this pin
+                    const isHovered = this.hover();
+                    console.log(`Pin ${this.name} hover check: ${isHovered}`);
+                    
+                    if (isHovered) {
+                        console.log(`Pin ${this.name} settled -> dragging`);
+                        this.state = 'dragging';
+                        this.moved = false;
+                        
+                        // Lock scrolling and notify that an object is selected
+                        if (this.comp && typeof this.comp.$emit === 'function') {
+                            this.comp.$emit('scroll-lock', true);
+                            this.comp.$emit('object-selected');
+                        }
+                    }
+                    break;
+            }
+            
+            // Prevent default if mouse is over pin
+            if (event && this.hover()) {
+                event.preventDefault();
+                console.log(`Pin ${this.name} prevented default on mousedown`);
+            }
+        } catch (e) {
+            console.error(`Error in Pin ${this.name} mousedown:`, e);
         }
     }
 
     mouseup(event) {
-        switch (this.state) {
-            case 'dragging':
-                this.state = 'settled'
-                if (this.on_settled) this.on_settled()
-                this.comp.$emit('scroll-lock', false)
-                break
+        try {
+            console.log(`Pin ${this.name} mouseup, state: ${this.state}`);
+            
+            switch (this.state) {
+                case 'dragging':
+                    console.log(`Pin ${this.name} dragging -> settled`);
+                    this.state = 'settled';
+                    
+                    // Call the settled callback if it exists
+                    if (this.on_settled) {
+                        console.log(`Pin ${this.name} calling on_settled`);
+                        this.on_settled();
+                    }
+                    
+                    // Release scroll lock
+                    if (this.comp && typeof this.comp.$emit === 'function') {
+                        this.comp.$emit('scroll-lock', false);
+                    }
+                    
+                    // Force a redraw to update the pin's appearance
+                    if (this.comp && typeof this.comp.$emit === 'function') {
+                        this.comp.$emit('redraw-grid');
+                    }
+                    break;
+            }
+        } catch (e) {
+            console.error(`Error in Pin ${this.name} mouseup:`, e);
         }
     }
 
