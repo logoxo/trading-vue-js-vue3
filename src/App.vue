@@ -65,6 +65,7 @@ import TradingVue from './TradingVue.vue'
 import Data from '/data/data.json'
 import DataCube from './helpers/datacube.js'
 import RSI from './helpers/RSI.vue'
+import MatrixSeries from './helpers/MatrixSeries.vue'
 
 export default {
   name: 'app',
@@ -74,7 +75,7 @@ export default {
   
   provide() {
     return {
-      overlays: [RSI]
+      overlays: [RSI, MatrixSeries]
     }
   },
   methods: {
@@ -197,6 +198,22 @@ export default {
                 bandOpacity: 0.3,
                 upperBand: 70,
                 lowerBand: 30
+              }
+            },
+            {
+              name: "Matrix Series",
+              type: "MatrixSeries",
+              data: ohlcv, // Verwendet dieselben OHLCV-Daten wie das Hauptchart
+              settings: {
+                smoother: 5,
+                supResPeriod: 50,
+                supResPercentage: 100,
+                pricePeriod: 16,
+                ob: 200,
+                os: -200,
+                showObOs: true,
+                dynamic: true,
+                trendThreshold: 0.05
               }
             }
           ]
