@@ -97,12 +97,25 @@ export default {
         
         // Safely emit events in both Vue 2 and Vue 3
         safeEmit(event, ...args) {
-            if (this._$emit) {
-                // Vue 2 pattern
-                this._$emit(event, ...args)
-            } else {
-                // Vue 3 pattern
-                this.$emit(event, ...args)
+            console.log(`[overlay] safeEmit: ${event}`, args);
+            try {
+                if (this._$emit) {
+                    // Vue 2 pattern
+                    this._$emit(event, ...args);
+                } else {
+                    // Vue 3 pattern
+                    this.$emit(event, ...args);
+                }
+                
+                // Additional fallback for custom-event
+                if (event !== 'custom-event' && this.$parent && event !== 'layer-meta-props') {
+                    this.$emit('custom-event', {
+                        event: event,
+                        args: args
+                    });
+                }
+            } catch (e) {
+                console.error(`Error in safeEmit (${event}):`, e);
             }
         },
         
